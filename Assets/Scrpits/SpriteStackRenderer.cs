@@ -1,66 +1,89 @@
-using UnityEngine;using UnityEngine;
+using UnityEngine;
 
-namespace PenGame.View
+[ExecuteAlways]
+public class SpriteStacker : MonoBehaviour
 {
-    // [ExecuteAlways] 让脚本在编辑模式下也能执行 Start/Update
-    [ExecuteAlways]
-    public class SpriteStackRenderer : MonoBehaviour
-    {
-        [Header("Settings")]
-        public Sprite[] layers;
-        [Range(0, 0.5f)] // 增加一个滑动条方便调试
-        public float layerOffset = 0.02f;
-        public string sortingLayerName = "Default";
-        public int baseSortingOrder = 0;
+    [Header("素材设置")]
+    public Sprite[] layers; 
+    
+    [Header("实时调整参数")]
+    [Range(0.001f, 0.5f)] 
+    public float layerSpacing = 0.02f;
 
-        // 当你在 Inspector (检查器) 里改动任何数值时，这个函数会自动执行
-        private void OnValidate()
+    private bool isUpdating = false;
+
+    private void OnValidate()
+    {
+        
+        if (!isUpdating)
         {
-            // 只有当物体在场景中，且 layers 不为空时才刷新
-            if (gameObject.activeInHierarchy)
-            {
-                InitializeStack();
-            }
+            // 使用 UnityEditor 的延时调用，确保 Unity 已经处理完拖拽操作
+            #if UNITY_EDITOR
+            UnityEditor.EditorApplication.delayCall += SafeUpdate;
+            #endif
+        }
+    }
+
+    private void SafeUpdate()
+    {
+        if (this == null) return; // 防止物体被删除后依然执行
+        
+        #if UNITY_EDITOR
+        UnityEditor.EditorApplication.delayCall -= SafeUpdate;
+        #endif
+
+        isUpdating = true;
+        UpdateStack();
+        isUpdating = false;
+    }
+
+    [ContextMenu("手动刷新层级")]
+    public void UpdateStack()
+    {
+        if (layers == null || layers.Length == 0) return;
+
+
+        int layerCount = layers.Length;
+
+        // 确保子物体数量
+        while (transform.childCount < layerCount)
+        {
+            GameObject newLayer = new GameObject($"Layer_{transform.childCount}");
+            newLayer.transform.SetParent(this.transform);
+            newLayer.AddComponent<SpriteRenderer>();
         }
 
-        public void InitializeStack()
+        // 更新每一层
+        for (int i = 0; i < transform.childCount; i++)
         {
-            // 1. 清理旧的层级 (在编辑模式下必须使用 DestroyImmediate)
-            // 我们通过循环删除，直到没有子物体为止
-            while (transform.childCount > 0)
+            Transform child = transform.GetChild(i);
+            
+            if (i < layerCount)
             {
-                DestroyImmediate(transform.GetChild(0).gameObject);
-            }
+                child.gameObject.SetActive(true);
+                child.localPosition = new Vector3(0, i * layerSpacing, 0);
+                // 修正：90度躺平，0度代表笔的指向
+                child.localRotation = Quaternion.Euler(90f, 0, 0);
 
-            if (layers == null || layers.Length == 0) return;
-
-            // 2. 重新生成
-            for (int i = 0; i < layers.Length; i++)
-            {
-                if (layers[i] == null) continue;
-
-                GameObject layerObj = new GameObject($"Layer_{i}");
-                layerObj.transform.SetParent(this.transform);
-                
-                // 关键：为了不让层级在 Hierarchy 里乱跳，可以给它们加上特殊标识
-                // 或者干脆让它们在 Hierarchy 里不可见 (可选): 
-                // layerObj.hideFlags = HideFlags.DontSave; 
-
-                layerObj.transform.localPosition = new Vector3(0, i * layerOffset, 0);
-                layerObj.transform.localRotation = Quaternion.identity;
-                layerObj.transform.localScale = Vector3.one;
-
-                SpriteRenderer sr = layerObj.AddComponent<SpriteRenderer>();
+                SpriteRenderer sr = child.GetComponent<SpriteRenderer>();
                 sr.sprite = layers[i];
-                sr.sortingLayerName = sortingLayerName;
-                sr.sortingOrder = baseSortingOrder + i;
+                sr.sortingOrder = i;
+            }
+            else
+            {
+                // 多出来的物体先隐藏，不要在循环里直接 Destroy
+                child.gameObject.SetActive(false);
             }
         }
     }
+
+    // 当你在 Inspector 右键脚本组件时，可以彻底清理
+    [ContextMenu("彻底清理残留")]
+    private void ClearAll()
+    {
+        for (int i = transform.childCount - 1; i >= 0; i--)
+        {
+            DestroyImmediate(transform.GetChild(i).gameObject);
+        }
+    }
 }
-
-
-
-
-
-
