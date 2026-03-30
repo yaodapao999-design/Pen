@@ -4,7 +4,7 @@ using UnityEngine;
 /// 出界判定的纯逻辑工具类，无状态，无 MonoBehaviour
 /// FallOffDetector 和 FallOffPredictor 共用此逻辑
 /// </summary>
-public static class FallOffCheck
+public static class FallOff
 {
     /// <summary>
     /// 判断刚体重心是否在桌面上方

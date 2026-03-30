@@ -42,7 +42,7 @@ public class FallOffDetector : MonoBehaviour
     {
         if (hasFallen) return;
 
-        if (FallOffCheck.CheckFallOff(
+        if (FallOff.CheckFallOff(
                 rb.worldCenterOfMass, rb.linearVelocity, initialY,
                 raycastDistance, fallVelocityThreshold, tableLayer))
         {

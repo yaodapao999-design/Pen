@@ -60,6 +60,9 @@ public class FallOffPredictor : MonoBehaviour
         playerPen = player;
         enemyPen = enemy;
 
+        // 自动对齐真实物理步长，确保模拟和真实场景时序一致
+        simDeltaTime = Time.fixedDeltaTime;
+
         simScene = SceneManager.CreateScene(
             "__FallOffSim__",
             new CreateSceneParameters(LocalPhysicsMode.Physics3D)
@@ -111,9 +114,11 @@ public class FallOffPredictor : MonoBehaviour
         ResetSimBody(simPlayerGo, simPlayerRb, simPlayerCol, playerPen);
         ResetSimBody(simEnemyGo, simEnemyRb, simEnemyCol, enemyPen);
 
-        simPhysics.Simulate(0.0001f);
+        simPlayerRb.WakeUp();
+        simEnemyRb.WakeUp();
 
         ApplyLaunchForce(simPlayerRb, simPlayerCol, ctx);
+        simPhysics.Simulate(simDeltaTime);
 
         float initialEnemyY = simEnemyRb.worldCenterOfMass.y;
         int offTableFrames = 0;
@@ -135,7 +140,7 @@ public class FallOffPredictor : MonoBehaviour
                 });
             }
 
-            if (FallOffCheck.CheckFallOff(
+            if (FallOff.CheckFallOff(
                     simEnemyRb.worldCenterOfMass, simEnemyRb.linearVelocity, initialEnemyY,
                     enemyPen.FallOff.raycastDistance, enemyPen.FallOff.fallVelocityThreshold,
                     enemyPen.FallOff.tableLayer, simPhysics))
@@ -153,9 +158,9 @@ public class FallOffPredictor : MonoBehaviour
                 offTableFrames = 0;
             }
 
-            if (i > 30 &&
-                simPlayerRb.linearVelocity.sqrMagnitude < 0.001f &&
-                simEnemyRb.linearVelocity.sqrMagnitude < 0.001f)
+            if (i > 60 &&
+                simPlayerRb.linearVelocity.sqrMagnitude < 0.0001f &&
+                simEnemyRb.linearVelocity.sqrMagnitude < 0.0001f)
             {
                 break;
             }
@@ -169,6 +174,7 @@ public class FallOffPredictor : MonoBehaviour
 
     private void ApplyLaunchForce(Rigidbody simRb, CapsuleCollider simCol, BattleContext ctx)
     {
+        // 只清 player 的速度，enemy 已在 ResetSimBody 中同步真实速度
         simRb.linearVelocity = Vector3.zero;
         simRb.angularVelocity = Vector3.zero;
 
@@ -199,7 +205,7 @@ public class FallOffPredictor : MonoBehaviour
         rb.angularDamping = srcRb.angularDamping;
         rb.useGravity = srcRb.useGravity;
         rb.interpolation = RigidbodyInterpolation.None;
-        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+        rb.collisionDetectionMode = srcRb.collisionDetectionMode;
         rb.constraints = srcRb.constraints;
 
         var srcCol = original.penCollider;
@@ -259,13 +265,31 @@ public class FallOffPredictor : MonoBehaviour
             original.transform.rotation
         );
 
-        simRb.linearVelocity = Vector3.zero;
-        simRb.angularVelocity = Vector3.zero;
+        // 同步真实速度，保留拖拽结束时的残余速度
+        simRb.linearVelocity = original.rb.linearVelocity;
+        simRb.angularVelocity = original.rb.angularVelocity;
 
         simRb.mass = original.rb.mass;
         simRb.linearDamping = original.rb.linearDamping;
         simRb.angularDamping = original.rb.angularDamping;
+        simRb.useGravity = original.rb.useGravity;
+        simRb.collisionDetectionMode = original.rb.collisionDetectionMode;
         simRb.constraints = original.rb.constraints;
+
+        // 同步重心
+        if (original.rb.automaticCenterOfMass)
+            simRb.ResetCenterOfMass();
+        else
+            simRb.centerOfMass = original.rb.centerOfMass;
+
+        // 同步转动惯量
+        if (original.rb.automaticInertiaTensor)
+            simRb.ResetInertiaTensor();
+        else
+        {
+            simRb.inertiaTensor = original.rb.inertiaTensor;
+            simRb.inertiaTensorRotation = original.rb.inertiaTensorRotation;
+        }
 
         SyncColliderParams(simCol, original.penCollider);
     }
