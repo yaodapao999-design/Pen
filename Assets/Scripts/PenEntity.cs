@@ -11,11 +11,40 @@ public class PenEntity : MonoBehaviour
 
     public Rigidbody rb { get; private set; }
     public CapsuleCollider penCollider { get; private set; }
+    public FallOffDetector FallOff { get; private set; }
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody>();
         penCollider = GetComponent<CapsuleCollider>();
+        FallOff = GetComponent<FallOffDetector>();
+    }
+
+    /// <summary>施加弹射冲量</summary>
+    public void Launch(Vector3 direction, float force, float contactOffset)
+    {
+        rb.linearVelocity = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
+
+        Vector3 penAxis = GetPenAxis();
+        float halfHeight = (penCollider.height / 2f) - penCollider.radius;
+        Vector3 forcePosition = rb.worldCenterOfMass + penAxis * (contactOffset * halfHeight);
+
+        rb.AddForceAtPosition(direction * (baseForce * force), forcePosition, ForceMode.Impulse);
+    }
+
+    /// <summary>是否已停稳</summary>
+    public bool IsStopped()
+    {
+        return rb.linearVelocity.magnitude < stopVelocityThreshold &&
+               rb.angularVelocity.magnitude < stopAngularThreshold;
+    }
+
+    /// <summary>强制停止</summary>
+    public void Stop()
+    {
+        rb.linearVelocity = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
     }
 
     public Vector3 GetPenAxis()
