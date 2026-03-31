@@ -677,7 +677,6 @@ GameObject:
   - component: {fileID: 265763699}
   - component: {fileID: 265763698}
   - component: {fileID: 265763697}
-  - component: {fileID: 265763701}
   m_Layer: 7
   m_Name: Enemy
   m_TagString: Untagged
@@ -768,28 +767,6 @@ Transform:
   - {fileID: 662298478}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 93.96, z: 0}
---- !u!114 &265763701
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 265763696}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cc2374e9435894f50890461fa10f09da, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::FallOffDetector
-  tableLayer:
-    serializedVersion: 2
-    m_Bits: 64
-  raycastDistance: 5
-  fallVelocityThreshold: -0.5
-  requiredFrames: 5
-  fallingLayerName: Background
-  OnFellOff:
-    m_PersistentCalls:
-      m_Calls: []
 --- !u!1 &307046419
 GameObject:
   m_ObjectHideFlags: 0
@@ -800,7 +777,6 @@ GameObject:
   m_Component:
   - component: {fileID: 307046421}
   - component: {fileID: 307046420}
-  - component: {fileID: 307046422}
   m_Layer: 0
   m_Name: BattleManager
   m_TagString: Untagged
@@ -837,22 +813,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &307046422
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 307046419}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 413a3f47aca684310ab4b07930d1e2db, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::FallOffPredictor
-  maxSimSteps: 360
-  simDeltaTime: 0.016666668
-  sampleInterval: 1
-  table: {fileID: 1731467084}
 --- !u!1 &330585543
 GameObject:
   m_ObjectHideFlags: 0
@@ -2323,7 +2283,6 @@ GameObject:
   - component: {fileID: 1610534240}
   - component: {fileID: 1610534239}
   - component: {fileID: 1610534238}
-  - component: {fileID: 1610534241}
   m_Layer: 7
   m_Name: Pen
   m_TagString: Untagged
@@ -2414,28 +2373,6 @@ MonoBehaviour:
   stopAngularThreshold: 0.05
   stopCheckDelay: 0.5
   maxDragDistance: 1
---- !u!114 &1610534241
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1610534236}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cc2374e9435894f50890461fa10f09da, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::FallOffDetector
-  tableLayer:
-    serializedVersion: 2
-    m_Bits: 64
-  raycastDistance: 5
-  fallVelocityThreshold: -0.5
-  requiredFrames: 5
-  fallingLayerName: Background
-  OnFellOff:
-    m_PersistentCalls:
-      m_Calls: []
 --- !u!1 &1682962002
 GameObject:
   m_ObjectHideFlags: 0

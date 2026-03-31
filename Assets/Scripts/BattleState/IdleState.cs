@@ -70,22 +70,8 @@ public class IdleState : IEntityState
     {
         isDragging = false;
 
-        PredictResult predictResult = null;
-        var predictor = stateMachine.Predictor;
-        if (predictor != null)
-        {
-            predictor.SyncSimScene();
-            predictResult = predictor.Predict(ctx);
-        }
-
-        ctx.LastPredictResult = predictResult;
-
-        bool isKillShot = predictResult != null && predictResult.isKillShot;
-        Debug.Log($"弹射！方向: {ctx.LaunchDirection}, 力度: {ctx.LaunchForce:F2}, " +
-                  $"偏移: {ctx.ContactOffset:F3} | 一击必杀: {isKillShot}" +
-                  (isKillShot ? $" (击杀帧: {predictResult.killFrame}, 采样点: {predictResult.samples.Count})" : ""));
-
-            stateMachine.ChangeState(new ActionState(stateMachine, ctx));
+        Debug.Log($"弹射！方向: {ctx.LaunchDirection}, 力度: {ctx.LaunchForce:F2}, 偏移: {ctx.ContactOffset:F3}");
+        stateMachine.ChangeState(new ActionState(stateMachine, ctx));
     }
 
     private Vector3 GetWorldPositionOnPenPlane(Vector2 screenPos)

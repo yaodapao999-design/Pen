@@ -9,10 +9,6 @@ public class BattleContext
     public float LaunchForce { get; set; }
     public float ContactOffset { get; set; }
 
-    /// <summary>本回合的预判结果，IdleState 松手时写入</summary>
-    public PredictResult LastPredictResult { get; set; }
-
-
     public BattleContext(PenEntity pen)
     {
         this.pen = pen;

@@ -7,27 +7,26 @@ public class ResultState : IEntityState
 {
     private readonly BattleStateMachine stateMachine;
     private readonly BattleContext ctx;
+    private readonly bool playerFell;
+    private readonly bool enemyFell;
 
-    public ResultState(BattleStateMachine stateMachine, BattleContext ctx)
+    public ResultState(BattleStateMachine stateMachine, BattleContext ctx, bool playerFell, bool enemyFell)
     {
         this.stateMachine = stateMachine;
         this.ctx = ctx;
+        this.playerFell = playerFell;
+        this.enemyFell = enemyFell;
     }
 
     public void Enter()
     {
-        bool playerFell = ctx.pen.FallOff != null && ctx.pen.FallOff.HasFallen;
-        bool enemyFell = ctx.enemyPen.FallOff != null && ctx.enemyPen.FallOff.HasFallen;
-
         BattleResult result;
         if (playerFell && enemyFell)
             result = BattleResult.Draw;
         else if (enemyFell)
             result = BattleResult.PlayerWin;
-        else if (playerFell)
-            result = BattleResult.EnemyWin;
         else
-            result = BattleResult.Draw; // 都没掉，平局（回合结束无人出局）
+            result = BattleResult.EnemyWin;
 
         Debug.Log($"[ResultState] 对局结果: {result}");
     }
@@ -36,11 +35,6 @@ public class ResultState : IEntityState
 
     public void Exit()
     {
-        // 重置掉落检测器，为下一局做准备
-        ctx.pen.FallOff?.ResetDetector();
-        ctx.enemyPen.FallOff?.ResetDetector();
-        ctx.LastPredictResult = null;
-
         Debug.Log("[ResultState] 离开结算状态");
     }
 }

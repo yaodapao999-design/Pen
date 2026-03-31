@@ -9,15 +9,16 @@ public class PenEntity : MonoBehaviour
     public float stopCheckDelay = 0.5f;
     public float maxDragDistance = 2.0f;
 
+    [Header("掉落检测")]
+    public float fallYThreshold = -2f;
+
     public Rigidbody rb { get; private set; }
     public CapsuleCollider penCollider { get; private set; }
-    public FallOffDetector FallOff { get; private set; }
-
+    public bool HasFallen => rb != null && rb.position.y < fallYThreshold;
     private void Awake()
     {
         rb = GetComponent<Rigidbody>();
         penCollider = GetComponent<CapsuleCollider>();
-        FallOff = GetComponent<FallOffDetector>();
     }
 
     /// <summary>施加弹射冲量</summary>
