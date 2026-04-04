@@ -3,29 +3,38 @@ using UnityEngine;
 [CreateAssetMenu(fileName = "NewPenPart", menuName = "GameData/PenPart")]
 public class PenPartData : ScriptableObject
 {
-[Header("--- 基础身份 ---")]
-    public string PartID;           
-    public string DisplayName;      
-    public PartType Category;       // 决定它能装在哪个固定槽位
 
-    [Header("--- 表现与生成 ---")]
-    public GameObject VisualPrefab; // 包含模型和 Collider
-    public Sprite Icon;             
+    [field: SerializeField] 
+    public PartType PartType { get; private set; } // 这个零件属于哪个槽（笔帽/橡胶圈/笔尖/笔芯/笔杆）
 
-    [Header("--- 核心物理性能 ---")]
-    // 质量：【防守属性】
-    // 越重，根据动量守恒定理 (P=mv)，对手越难把你撞出位移。
-    public float Mass;              
+    [field: SerializeField] 
+    public GameObject VisualPrefab { get; private set; } // 3D模型预制体
 
-    // 弹射加成：【进攻属性】
-    // 模拟不同零件对弹射手感的加成（例如橡胶圈更好发力）。
-    public float LaunchPowerMultiplier = 1.0f; 
+    [field: SerializeField] 
+    public float MassAdd { get; private set; }  //增加多少质量（可为负数）
 
-    // 物理材质：【交互属性】
-    // 包含 Friction (抓地力) 和 Bounciness (碰撞反弹力)。
-    // 橡胶圈：高摩擦力，防止自己滑出桌面。
-    // 金属头：高反弹力，把别人弹出更远。
+    [field: SerializeField] 
+    public Vector3 CenterOfMassOffset { get; private set; } // 对整只笔质心的影响
 
-    [Header("--- 经济属性 ---")]
-    public int BuyPrice;
+    [field: SerializeField] 
+    public PhysicsModifier PhysicsModifier { get; private set; } //  摩擦/弹性相关参数
+
+    [field: SerializeField] 
+    public string DisplayName { get; private set; }
+
+    [field: SerializeField] 
+    public Sprite Icon { get; private set; }
+
+    [field: SerializeField] 
+    public int Price { get; private set; }
+
+}
+
+[System.Serializable]
+public struct PhysicsModifier
+{
+    public float globalFriction; // 影响整只笔的摩擦（-1代表不覆盖）
+    public float localFrictionAdd; // 局部摩擦增量（橡胶圈用）
+    public bool isLocalFriction; // true则只影响该部件碰撞体，false影响全局
+    public float bounciness; // 弹性系数（-1代表不覆盖）
 }
