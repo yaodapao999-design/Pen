@@ -58,8 +58,11 @@ public class PenCollisionFeedback : MonoBehaviour
         // PositionMode 设为 FeedbackPosition，即可跟随碰撞接触点自动生成火花。
         // 生成该 Prefab：菜单 Tools / Pen / Create Collision Particle Prefab
 
-        // ── TODO: 碰撞音效 ────────────────────────────────────────
-        // 将在 MMF_Player 中添加 MMF_AudioSource Feedback 后自动生效。
+        // ── 碰撞音效（4.2 已实现） ────────────────────────────────
+        // 在 MMF_Player 中添加 MMF_AudioSource Feedback，
+        // 将碰撞 SFX AudioClip 赋值到 TargetAudioSource，
+        // 已配置 Pitch ±0.1 随机化与 UseIntensityForVolume 联动。
+        // 一键配置：菜单 Tools / Pen / Setup Collision Audio Feedback
 
         // ── TODO: 碰撞卡顿（Hit Stop） ────────────────────────────
         // 将在 MMF_Player 中添加 MMF_FreezeFrame Feedback 后自动生效。

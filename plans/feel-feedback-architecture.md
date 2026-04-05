@@ -11,9 +11,9 @@
 graph TD
     A[PenEntity<br/>Rigidbody + CapsuleCollider] -->|OnCollisionEnter| B[PenCollisionFeedback<br/>碰撞检测 + 强度计算]
     B -->|PlayFeedbacks| C[MMF_Player<br/>碰撞反馈播放器]
-    C --> D1[MMF_CameraShake<br/>✅ 镜头抖动 - 首期实现]
-    C --> D2[MMF_Particles<br/>⬜ 碰撞粒子特效 - 待实现]
-    C --> D3[MMF_AudioSource<br/>⬜ 碰撞音效 - 待实现]
+    C --> D1[MMF_CameraShake<br/>✅ 镜头抖动 - 已实现]
+    C --> D2[MMF_Particles<br/>✅ 碰撞粒子特效 - 已实现]
+    C --> D3[MMF_AudioSource<br/>✅ 碰撞音效 - 已实现]
     C --> D4[MMF_FreezeFrame<br/>⬜ 碰撞卡顿 - 待实现]
     C --> D5[MMF_TimescaleModifier<br/>⬜ 慢动作 - 待实现]
     C --> D6[FocusCameraSystem<br/>⬜ 聚焦镜头运动 - 待实现]
@@ -118,7 +118,7 @@ public class PenCollisionFeedback : MonoBehaviour
 
 以下模块全部作为 `MMF_Player` 中的额外 Feedback 条目，统一在 `PenCollisionFeedback` 触发时一并播放，只需在 Inspector 添加并启用/禁用即可。
 
-### 4.1 ⬜ 碰撞粒子特效
+### 4.1 ✅ 碰撞粒子特效
 
 **Feel 工具**：`MMF_Particles` 或 `MMF_ParticlesInstantiation`
 
@@ -130,7 +130,7 @@ public class PenCollisionFeedback : MonoBehaviour
 
 ---
 
-### 4.2 ⬜ 碰撞音效
+### 4.2 ✅ 碰撞音效
 
 **Feel 工具**：`MMF_AudioSource`
 
@@ -197,29 +197,40 @@ public class PenCollisionFeedback : MonoBehaviour
 
 ```
 Assets/Scripts/
-└── Feedbacks/                          ← 新建目录
-    ├── PenCollisionFeedback.cs         ✅ 首期实现（碰撞检测 + 镜头抖动触发）
+└── Feedbacks/                          ← 已创建
+    ├── PenCollisionFeedback.cs         ✅ 碰撞检测 + 反馈触发入口
     ├── FocusCameraController.cs        ⬜ 聚焦镜头运动系统
     └── CloseupCameraController.cs      ⬜ 特写镜头控制器
 
+Assets/Scripts/Editor/
+    ├── CollisionParticleSetup.cs       ✅ 一键创建碰撞粒子 Prefab
+    └── CollisionAudioSetup.cs          ✅ 一键配置碰撞音效 Feedback
+
 Assets/Prefabs/
-└── FeedbackManager.prefab              ✅ 首期实现（含 MMF_Player 配置）
+├── FeedbackManager.prefab              ✅ 含 MMF_Player 配置
+└── VFX_CollisionSparks.prefab          ✅ 碰撞火花粒子特效
 ```
 
 ---
 
-## 六、实施步骤（首期：镜头抖动）
+## 六、目前进度
 
-```mermaid
-graph LR
-    S1[1. 给笔 GameObject\n设置 Tag = Pen] --> S2[2. 给 Main Camera\n添加 MMCameraShaker]
-    S2 --> S3[3. 新建 FeedbackManager GameObject\n添加 MMF_Player]
-    S3 --> S4[4. MMF_Player 中\n添加 MMF_CameraShake Feedback]
-    S4 --> S5[5. 创建 PenCollisionFeedback.cs\n挂载到两支笔上]
-    S5 --> S6[6. 拖拽 FeedbackManager\n到 PenCollisionFeedback\n的 collisionFeedbacks 字段]
-    S6 --> S7[7. 在 GameFeedback 场景\n测试碰撞抖动效果]
-    S7 --> S8[8. 调参：Amplitude / Duration\n/ minImpactVelocity 等]
-```
+### ✅ 已完成
+
+| 功能 | 实现方式 | 相关文件 |
+|---|---|---|
+| 镜头抖动 | MMF_CameraShake + MMCameraShaker | `PenCollisionFeedback.cs` |
+| 碰撞粒子特效 | MMF_ParticlesInstantiation + VFX_CollisionSparks.prefab | `CollisionParticleSetup.cs` |
+| 碰撞音效 | MMF_AudioSource，Pitch ±0.1 随机化，IntensityForVolume | `CollisionAudioSetup.cs` |
+
+### ⬜ 待实现
+
+| 功能 | 优先级 | 说明 |
+|---|---|---|
+| 碰撞卡顿（Hit Stop） | 中 | MMF_FreezeFrame，0.05~0.1s |
+| 慢动作（Bullet Time） | 中 | MMF_TimescaleModifier，仅强碰（intensity > 0.8）触发 |
+| 聚焦镜头运动 | 低 | Cinemachine TargetGroup + FocusCameraController.cs |
+| 特写镜头 | 低 | 结算/重击切换 CloseupCamera |
 
 ---
 
