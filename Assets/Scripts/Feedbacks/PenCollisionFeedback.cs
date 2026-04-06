@@ -22,6 +22,11 @@ public class PenCollisionFeedback : MonoBehaviour
     [Tooltip("只响应带有此 Tag 的碰撞体（笔对笔碰撞）")]
     [SerializeField] private string penTag = "Pen";
 
+    [Header("慢动作配置")]
+    [Tooltip("触发慢动作的强度阈值 (0~1)")]
+    [Range(0f, 1f)]
+    [SerializeField] private float slowMotionThreshold = 0.8f;
+
     // ─────────────────────────────────────────────────────────────
     // TODO: 以下 OnCollisionEnter 方式为临时实现，
     //       后续将改为监听战斗逻辑脚本（如 ActionState / BattleStateMachine）
@@ -48,9 +53,26 @@ public class PenCollisionFeedback : MonoBehaviour
     {
         if (collisionFeedbacks == null) return;
 
-        // ── 镜头抖动（首期实现） ──────────────────────────────────
+        // ── 统一播放反馈 ────────────────────────────────────────
         collisionFeedbacks.FeedbacksIntensity = intensity;
+
+        // ── 慢动作（Bullet Time）逻辑控制 ───────────────────────────
+        // 仅在强度超过阈值且该反馈本身已启用时触发
+        var timescaleFeedback = collisionFeedbacks.GetFeedbackOfType<MMF_TimescaleModifier>();
+        bool originalActiveState = timescaleFeedback != null && timescaleFeedback.Active;
+
+        if (originalActiveState && intensity < slowMotionThreshold)
+        {
+            timescaleFeedback.Active = false;
+        }
+
         collisionFeedbacks.PlayFeedbacks(contactPoint);
+
+        // 恢复原始状态，以便下次碰撞时重新判断
+        if (timescaleFeedback != null)
+        {
+            timescaleFeedback.Active = originalActiveState;
+        }
 
         // ── 碰撞粒子特效（4.1 已实现） ────────────────────────────
         // 在 MMF_Player 中添加 MMF_ParticlesInstantiation Feedback，
@@ -64,16 +86,15 @@ public class PenCollisionFeedback : MonoBehaviour
         // 已配置 Pitch ±0.1 随机化与 UseIntensityForVolume 联动。
         // 一键配置：菜单 Tools / Pen / Setup Collision Audio Feedback
 
-        // ── TODO: 碰撞卡顿（Hit Stop） ────────────────────────────
+        // ── 碰撞卡顿（4.3 已实现） ────────────────────────────
         // 将在 MMF_Player 中添加 MMF_FreezeFrame Feedback 后自动生效。
 
-        // ── TODO: 慢动作（Bullet Time） ───────────────────────────
-        // 将在 MMF_Player 中添加 MMF_TimescaleModifier Feedback 后自动生效。
-        // 建议仅在 intensity > 0.8 时触发，可通过 Feedback 的 Timing 条件配置。
 
-        // ── TODO: 聚焦镜头运动 ────────────────────────────────────
-        // 在 FocusCameraController.cs 实现后，在此处调用：
-        // FocusCameraController.Instance?.FocusOn(contactPoint, intensity);
+        // ── 聚焦镜头运动（4.5 已实现） ──────────────────────────────────
+        // FocusCameraController 挂载在 FocusCameraSystem 节点上，
+        // 碰撞时触发 FOV Punch，镜头始终保持两笔在视野内。
+        // 一键创建：菜单 Tools / Pen / Setup Focus Camera
+        FocusCameraController.Instance?.FocusOn(contactPoint, intensity);
 
         // ── TODO: 特写镜头 ────────────────────────────────────────
         // 在 CloseupCameraController.cs 实现后，在此处或 ResultState 中触发。

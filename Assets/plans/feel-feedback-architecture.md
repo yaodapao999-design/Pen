@@ -16,7 +16,7 @@ graph TD
     C --> D3[MMF_AudioSource<br/>✅ 碰撞音效 - 已实现]
     C --> D4[MMF_FreezeFrame<br/>⬜ 碰撞卡顿 - 待实现]
     C --> D5[MMF_TimescaleModifier<br/>⬜ 慢动作 - 待实现]
-    C --> D6[FocusCameraSystem<br/>⬜ 聚焦镜头运动 - 待实现]
+    C --> D6[FocusCameraSystem<br/>✅ 聚焦镜头运动 - 已实现]
     C --> D7[CloseupCameraSystem<br/>⬜ 特写镜头 - 待实现]
 ```
 
@@ -166,7 +166,7 @@ public class PenCollisionFeedback : MonoBehaviour
 
 ---
 
-### 4.5 ⬜ 聚焦镜头运动系统
+### 4.5 ✅ 聚焦镜头运动系统
 
 **设计思路**：战斗中，镜头平滑对准两笔的中心点，始终保证两只笔都在画面内，并根据两笔间距动态调整 FOV
 
@@ -199,7 +199,7 @@ public class PenCollisionFeedback : MonoBehaviour
 Assets/Scripts/
 └── Feedbacks/                          ← 已创建
     ├── PenCollisionFeedback.cs         ✅ 碰撞检测 + 反馈触发入口
-    ├── FocusCameraController.cs        ⬜ 聚焦镜头运动系统
+    ├── FocusCameraController.cs        ✅ 聚焦镜头运动系统
     └── CloseupCameraController.cs      ⬜ 特写镜头控制器
 
 Assets/Scripts/Editor/
@@ -222,14 +222,15 @@ Assets/Prefabs/
 | 镜头抖动 | MMF_CameraShake + MMCameraShaker | `PenCollisionFeedback.cs` |
 | 碰撞粒子特效 | MMF_ParticlesInstantiation + VFX_CollisionSparks.prefab | `CollisionParticleSetup.cs` |
 | 碰撞音效 | MMF_AudioSource，Pitch ±0.1 随机化，IntensityForVolume | `CollisionAudioSetup.cs` |
+| 碰撞卡顿（Hit Stop） | MMF_FreezeFrame，0.05~0.1s | `PenCollisionFeedback.cs` |
+| 聚焦镜头运动 | Cinemachine TargetGroup + CinemachineCamera + FOV Punch | `FocusCameraController.cs` |
 
 ### ⬜ 待实现
 
 | 功能 | 优先级 | 说明 |
 |---|---|---|
-| 碰撞卡顿（Hit Stop） | 中 | MMF_FreezeFrame，0.05~0.1s |
 | 慢动作（Bullet Time） | 中 | MMF_TimescaleModifier，仅强碰（intensity > 0.8）触发 |
-| 聚焦镜头运动 | 低 | Cinemachine TargetGroup + FocusCameraController.cs |
+| ~~聚焦镜头运动~~ | ~~低~~ | ~~Cinemachine TargetGroup + FocusCameraController.cs~~ ✅ |
 | 特写镜头 | 低 | 结算/重击切换 CloseupCamera |
 
 ---
