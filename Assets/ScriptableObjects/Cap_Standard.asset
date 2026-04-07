@@ -12,12 +12,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 77e4650b0af9f4a06b67ded7c0f7d707, type: 3}
   m_Name: Cap_Standard
   m_EditorClassIdentifier: Assembly-CSharp::PenPartData
-  PartID: cap_standard
+  PartID: cap_01
   DisplayName: "\u6807\u51C6\u7B14\u5E3D"
   Category: 1
   VisualPrefab: {fileID: 4057139233056458266, guid: 0b1d8d7c8180d481a94f5eb3fec6a143, type: 3}
   Icon: {fileID: 0}
-  PlugsInto: 5
+  PivotOffset: {x: 0, y: 0, z: 0}
+  PlugsInto: 2
   ProvidesSocket: 
   Mass: 0.2
   OverrideGlobalFriction: 0

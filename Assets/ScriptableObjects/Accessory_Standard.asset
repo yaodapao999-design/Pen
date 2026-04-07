@@ -17,9 +17,11 @@ MonoBehaviour:
   Category: 4
   VisualPrefab: {fileID: 3841112404359538307, guid: 1f6a10a0f9fcb4225849a1a5fcac4738, type: 3}
   Icon: {fileID: 0}
-  PlugsInto: 7
+  PivotOffset: {x: 0, y: 0, z: 0}
+  PlugsInto: 3
+  ProvidesSocket: 
   Mass: 0.05
-  OverrideGlobalFriction: 1
-  PhysicsMaterial: {fileID: 13400000, guid: c1a53ebef151e4e84ac89ea7b25f27cf, type: 2}
+  OverrideGlobalFriction: 0
+  PhysicsMaterial: {fileID: 0}
   LaunchPowerMultiplier: 1
   BuyPrice: 0
