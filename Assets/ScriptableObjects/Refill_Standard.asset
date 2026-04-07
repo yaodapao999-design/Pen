@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 77e4650b0af9f4a06b67ded7c0f7d707, type: 3}
+  m_Name: Refill_Standard
+  m_EditorClassIdentifier: Assembly-CSharp::PenPartData
+  PartID: refill_standard
+  DisplayName: "\u6807\u51C6\u7B14\u82AF"
+  Category: 3
+  VisualPrefab: {fileID: 2803278840738422023, guid: 5ae9ab58cd2b24765a231c385df27cc2, type: 3}
+  Icon: {fileID: 0}
+  PivotOffset: {x: 0, y: 0, z: 0}
+  PlugsInto: 1
+  ProvidesSocket: 
+  Mass: 0.1
+  OverrideGlobalFriction: 0
+  PhysicsMaterial: {fileID: 0}
+  LaunchPowerMultiplier: 1
+  BuyPrice: 0

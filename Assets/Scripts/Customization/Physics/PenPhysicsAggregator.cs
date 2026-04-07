@@ -34,13 +34,15 @@ public class PenPhysicsAggregator
                 effect.Apply(state);
         }
 
-        // 基础值 + 部件叠加值
-        _rb.mass = _baseMass + state.TotalMass;
+        float totalMass = _baseMass + state.TotalMass;
+        _rb.mass = totalMass;
 
-        if (state.TotalMass > 0f)
-            _rb.centerOfMass = _baseCenterOfMass + (state.WeightedCenterOfMass / state.TotalMass);
-        else
-            _rb.centerOfMass = _baseCenterOfMass;
+        // 加权质心：笔杆基础质心 + 所有部件（质量 × 局部坐标）
+        Vector3 weightedSum = _baseCenterOfMass * _baseMass;
+        foreach (var part in parts)
+            weightedSum += part.GameObject.transform.localPosition * part.Data.Mass;
+
+        _rb.centerOfMass = weightedSum / totalMass;
 
         if (state.GlobalPhysicsMaterial != null)
             _mainCollider.material = state.GlobalPhysicsMaterial;
@@ -53,7 +55,7 @@ public class PenPhysicsAggregator
         var data = part.Data;
 
         // 质量 + 质心
-        effects.Add(new MassEffect(data.Mass, data.CenterOfMassOffset));
+        effects.Add(new MassEffect(data.Mass));
 
         // 弹射倍率
         if (!Mathf.Approximately(data.LaunchPowerMultiplier, 1f))

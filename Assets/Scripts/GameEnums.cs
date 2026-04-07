@@ -10,6 +10,7 @@ public enum PartType
 // 连接点类型：决定哪些部件可以互相拼接
 public enum SocketType
 {
+    None,            // 无（Barrel 等根部件使用）
     BarrelFront,     // 笔杆前端（接笔头/笔芯）
     BarrelRear,      // 笔杆后端（接笔帽）
     BarrelBody,      // 笔杆身（接附件，如橡胶圈）

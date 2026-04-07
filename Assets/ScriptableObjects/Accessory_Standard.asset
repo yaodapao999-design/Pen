@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 77e4650b0af9f4a06b67ded7c0f7d707, type: 3}
+  m_Name: Accessory_Standard
+  m_EditorClassIdentifier: Assembly-CSharp::PenPartData
+  PartID: accessory_standard
+  DisplayName: "\u666E\u901A\u9644\u4EF6"
+  Category: 4
+  VisualPrefab: {fileID: 3841112404359538307, guid: 1f6a10a0f9fcb4225849a1a5fcac4738, type: 3}
+  Icon: {fileID: 0}
+  PivotOffset: {x: 0, y: 0, z: 0}
+  PlugsInto: 3
+  ProvidesSocket: 
+  Mass: 0.05
+  OverrideGlobalFriction: 0
+  PhysicsMaterial: {fileID: 0}
+  LaunchPowerMultiplier: 1
+  BuyPrice: 0

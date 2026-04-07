@@ -13,14 +13,13 @@ public class PenEntity : MonoBehaviour
     public float fallYThreshold = -2f;
 
     public Rigidbody rb { get; private set; }
-    public CapsuleCollider penCollider { get; private set; }
+    public CapsuleCollider penCollider => Assembly != null ? Assembly.BarrelCollider : null;
     public PenAssembly Assembly { get; private set; }
     public bool HasFallen => rb != null && rb.position.y < fallYThreshold;
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody>();
-        penCollider = GetComponent<CapsuleCollider>();
         Assembly = GetComponent<PenAssembly>();
     }
 

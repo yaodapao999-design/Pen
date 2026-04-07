@@ -14,14 +14,12 @@ public interface IPenPartEffect
 public class PenPhysicsState
 {
     public float TotalMass;
-    public UnityEngine.Vector3 WeightedCenterOfMass; // 加权质心（需除以TotalMass）
     public float LaunchMultiplier;
     public UnityEngine.PhysicsMaterial GlobalPhysicsMaterial;
 
     public PenPhysicsState()
     {
         TotalMass = 0f;
-        WeightedCenterOfMass = UnityEngine.Vector3.zero;
         LaunchMultiplier = 1f;
         GlobalPhysicsMaterial = null;
     }

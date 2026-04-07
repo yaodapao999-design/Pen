@@ -10,19 +10,18 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 77e4650b0af9f4a06b67ded7c0f7d707, type: 3}
-  m_Name: Cap_001
+  m_Name: Barrel_Standard
   m_EditorClassIdentifier: Assembly-CSharp::PenPartData
-  PartID: cap_01
-  DisplayName: "\u91CD\u7B14\u5E3D"
-  Category: 1
-  VisualPrefab: {fileID: 5734408168508053950, guid: 498b92b9a24ef438886dcc5e643ea66e, type: 3}
+  PartID: Barrel_Standard
+  DisplayName: "\u6807\u51C6\u7B14\u6746"
+  Category: 0
+  VisualPrefab: {fileID: 4216138323867839986, guid: e49295a9b36534524bd15b7df1fe4d2c, type: 3}
   Icon: {fileID: 0}
-  PlugsInto: 1
-  ProvidesSocket: 
-  Mass: 0.3
-  CenterOfMassOffset: {x: 0, y: 0, z: 0}
+  PivotOffset: {x: 0, y: 0, z: 0}
+  PlugsInto: 0
+  ProvidesSocket: 010000000200000003000000
+  Mass: 2
   OverrideGlobalFriction: 0
   PhysicsMaterial: {fileID: 0}
-  LaunchPowerMultiplier: 1.2
+  LaunchPowerMultiplier: 1
   BuyPrice: 0
-  SpecialEffects: []

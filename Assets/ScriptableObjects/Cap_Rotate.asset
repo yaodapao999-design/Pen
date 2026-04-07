@@ -10,19 +10,17 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 77e4650b0af9f4a06b67ded7c0f7d707, type: 3}
-  m_Name: Accessory_001
+  m_Name: Cap_Rotate
   m_EditorClassIdentifier: Assembly-CSharp::PenPartData
-  PartID: accessory_001
-  DisplayName: "\u6A61\u80F6\u5708"
-  Category: 4
-  VisualPrefab: {fileID: 8801716802324636333, guid: a87bf2c59aedf4b9ebc1ec38e45652cc, type: 3}
+  PartID: cap_02
+  DisplayName: "\u53CD\u7B14\u5E3D"
+  Category: 1
+  VisualPrefab: {fileID: 616052012661828168, guid: cc5972bd250f34d9da34c73f6945acf8, type: 3}
   Icon: {fileID: 0}
-  PlugsInto: 2
+  PlugsInto: 1
   ProvidesSocket: 
-  Mass: 0.05
-  CenterOfMassOffset: {x: 0, y: 0, z: 0}
+  Mass: 0.2
   OverrideGlobalFriction: 0
   PhysicsMaterial: {fileID: 0}
-  LaunchPowerMultiplier: 1.2
+  LaunchPowerMultiplier: 1
   BuyPrice: 0
-  SpecialEffects: []

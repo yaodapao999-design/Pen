@@ -27,7 +27,7 @@ public class PartSocket : MonoBehaviour
     /// <summary>检查某个部件是否可以插入此 socket</summary>
     public bool CanAccept(PenPartData partData)
     {
-        return !IsOccupied && partData.PlugsInto == SocketType;
+        return !IsOccupied && partData.PlugsInto != SocketType.None && partData.PlugsInto == SocketType;
     }
 
 #if UNITY_EDITOR

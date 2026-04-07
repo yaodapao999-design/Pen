@@ -23,11 +23,8 @@ public class PenPartData : ScriptableObject
     public SocketType[] ProvidesSocket;
 
     [Header("--- 物理：质量与质心 ---")]
-    // 该部件自身质量（kg）
+    // 该部件自身质量（kg），Unity 会根据所有子 Collider 位置自动计算质心
     public float Mass = 0.1f;
-    // 质心偏移：相对于该部件本地坐标的偏移
-    // 例如重笔帽会把整只笔的质心往后拉
-    public Vector3 CenterOfMassOffset = Vector3.zero;
 
     [Header("--- 物理：摩擦 ---")]
     // 是否覆盖全局摩擦（false = 局部摩擦，只影响该部件接触面）
@@ -41,8 +38,4 @@ public class PenPartData : ScriptableObject
     [Header("--- 经济 ---")]
     public int BuyPrice;
 
-    [Header("--- 特殊效果 ---")]
-    // 预留：后续电锯/口香糖等特殊组件挂载自定义效果
-    // 在 Inspector 里拖入实现了 IPenPartEffect 的 ScriptableObject
-    public PenPartEffectData[] SpecialEffects;
 }
