@@ -1,31 +1,48 @@
 using UnityEngine;
 
+/// <summary>
+/// 笔部件的静态数据定义（ScriptableObject）
+/// 只存数据，不含任何逻辑
+/// </summary>
 [CreateAssetMenu(fileName = "NewPenPart", menuName = "GameData/PenPart")]
 public class PenPartData : ScriptableObject
 {
-[Header("--- 基础身份 ---")]
-    public string PartID;           
-    public string DisplayName;      
-    public PartType Category;       // 决定它能装在哪个固定槽位
+    [Header("--- 基础身份 ---")]
+    public string PartID;
+    public string DisplayName;
+    public PartType Category;
 
-    [Header("--- 表现与生成 ---")]
-    public GameObject VisualPrefab; // 包含模型和 Collider
-    public Sprite Icon;             
+    [Header("--- 表现 ---")]
+    public GameObject VisualPrefab;  // 3D模型预制体（含Collider）
+    public Sprite Icon;
 
-    [Header("--- 核心物理性能 ---")]
-    // 质量：【防守属性】
-    // 越重，根据动量守恒定理 (P=mv)，对手越难把你撞出位移。
-    public float Mass;              
+    [Header("--- Socket 连接点 ---")]
+    // 这个部件插入父级的哪个 socket
+    public SocketType PlugsInto;
+    // 这个部件自身提供哪些 socket 给子部件连接
+    public SocketType[] ProvidesSocket;
 
-    // 弹射加成：【进攻属性】
-    // 模拟不同零件对弹射手感的加成（例如橡胶圈更好发力）。
-    public float LaunchPowerMultiplier = 1.0f; 
+    [Header("--- 物理：质量与质心 ---")]
+    // 该部件自身质量（kg）
+    public float Mass = 0.1f;
+    // 质心偏移：相对于该部件本地坐标的偏移
+    // 例如重笔帽会把整只笔的质心往后拉
+    public Vector3 CenterOfMassOffset = Vector3.zero;
 
-    // 物理材质：【交互属性】
-    // 包含 Friction (抓地力) 和 Bounciness (碰撞反弹力)。
-    // 橡胶圈：高摩擦力，防止自己滑出桌面。
-    // 金属头：高反弹力，把别人弹出更远。
+    [Header("--- 物理：摩擦 ---")]
+    // 是否覆盖全局摩擦（false = 局部摩擦，只影响该部件接触面）
+    public bool OverrideGlobalFriction = false;
+    public PhysicsMaterial PhysicsMaterial;
 
-    [Header("--- 经济属性 ---")]
+    [Header("--- 战斗属性 ---")]
+    // 弹射力倍率（1.0 = 无加成）
+    public float LaunchPowerMultiplier = 1.0f;
+
+    [Header("--- 经济 ---")]
     public int BuyPrice;
+
+    [Header("--- 特殊效果 ---")]
+    // 预留：后续电锯/口香糖等特殊组件挂载自定义效果
+    // 在 Inspector 里拖入实现了 IPenPartEffect 的 ScriptableObject
+    public PenPartEffectData[] SpecialEffects;
 }
