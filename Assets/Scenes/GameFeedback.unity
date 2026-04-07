@@ -1023,9 +1023,9 @@ Rigidbody:
   m_ImplicitTensor: 1
   m_UseGravity: 1
   m_IsKinematic: 0
-  m_Interpolate: 0
+  m_Interpolate: 1
   m_Constraints: 16
-  m_CollisionDetection: 2
+  m_CollisionDetection: 3
 --- !u!136 &1610534239
 CapsuleCollider:
   m_ObjectHideFlags: 0
@@ -1061,7 +1061,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1e67420714fb442669782675ae43afde, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PenEntity
-  baseForce: 15
+  baseForce: 30
   stopVelocityThreshold: 0.05
   stopAngularThreshold: 0.05
   stopCheckDelay: 0.5
@@ -1963,9 +1963,9 @@ Rigidbody:
   m_ImplicitTensor: 1
   m_UseGravity: 1
   m_IsKinematic: 0
-  m_Interpolate: 0
+  m_Interpolate: 1
   m_Constraints: 16
-  m_CollisionDetection: 2
+  m_CollisionDetection: 3
 --- !u!136 &2024911422
 CapsuleCollider:
   m_ObjectHideFlags: 0
