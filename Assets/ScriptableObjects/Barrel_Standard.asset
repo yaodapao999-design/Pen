@@ -12,12 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 77e4650b0af9f4a06b67ded7c0f7d707, type: 3}
   m_Name: Barrel_Standard
   m_EditorClassIdentifier: Assembly-CSharp::PenPartData
-  PartID: Barrel_Standard
+  PartID: barrel_standard
   DisplayName: "\u6807\u51C6\u7B14\u6746"
   Category: 0
   VisualPrefab: {fileID: 4216138323867839986, guid: e49295a9b36534524bd15b7df1fe4d2c, type: 3}
   Icon: {fileID: 0}
-  PivotOffset: {x: 0, y: 0, z: 0}
   PlugsInto: 0
   ProvidesSocket: 010000000200000003000000
   Mass: 2

@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 77e4650b0af9f4a06b67ded7c0f7d707, type: 3}
   m_Name: Cap_Rotate
   m_EditorClassIdentifier: Assembly-CSharp::PenPartData
-  PartID: cap_02
+  PartID: cap_rotate
   DisplayName: "\u53CD\u7B14\u5E3D"
   Category: 1
   VisualPrefab: {fileID: 616052012661828168, guid: cc5972bd250f34d9da34c73f6945acf8, type: 3}
