@@ -1,5 +1,50 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!1 &43673987403625730
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7197069287096403053}
+  - component: {fileID: 5785363271269164048}
+  m_Layer: 0
+  m_Name: Socket_Refill
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7197069287096403053
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 43673987403625730}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.8, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 8262842487322917440}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &5785363271269164048
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 43673987403625730}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4ef1ebafd119042d4a2bed83f1a77e37, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PartSocket
+  SocketType: 6
 --- !u!1 &1359462257680861526
 GameObject:
   m_ObjectHideFlags: 0
@@ -11,7 +56,7 @@ GameObject:
   - component: {fileID: 6726118745201361736}
   - component: {fileID: 4669726410239252187}
   m_Layer: 0
-  m_Name: Socket_BarrelRear
+  m_Name: Socket_CapBack
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -26,7 +71,7 @@ Transform:
   m_GameObject: {fileID: 1359462257680861526}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1.76, y: 0, z: 0}
+  m_LocalPosition: {x: 0.96, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -44,7 +89,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4ef1ebafd119042d4a2bed83f1a77e37, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PartSocket
-  SocketType: 2
+  SocketType: 5
 --- !u!1 &1523850243055869796
 GameObject:
   m_ObjectHideFlags: 0
@@ -146,7 +191,7 @@ GameObject:
   - component: {fileID: 3597192125438441221}
   - component: {fileID: 1057330559831361604}
   m_Layer: 0
-  m_Name: Socket_BarrelFront
+  m_Name: Socket_Tip
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -161,7 +206,7 @@ Transform:
   m_GameObject: {fileID: 3057253157623026954}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: -0.8, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -179,7 +224,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4ef1ebafd119042d4a2bed83f1a77e37, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PartSocket
-  SocketType: 1
+  SocketType: 4
 --- !u!1 &4216138323867839986
 GameObject:
   m_ObjectHideFlags: 0
@@ -213,6 +258,8 @@ Transform:
   - {fileID: 7217498756604485347}
   - {fileID: 6726118745201361736}
   - {fileID: 3597192125438441221}
+  - {fileID: 7197069287096403053}
+  - {fileID: 4182822170762206104}
   - {fileID: 5067100158509593481}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -238,7 +285,7 @@ CapsuleCollider:
   m_Radius: 0.062516615
   m_Height: 1.9174322
   m_Direction: 0
-  m_Center: {x: 0.89148194, y: -0.00074627995, z: 0.000000044703484}
+  m_Center: {x: 0.0914819, y: -0.00074627995, z: 0.000000044703484}
 --- !u!1 &4476833190000989779
 GameObject:
   m_ObjectHideFlags: 0
@@ -340,7 +387,7 @@ GameObject:
   - component: {fileID: 5067100158509593481}
   - component: {fileID: 4708008352127579851}
   m_Layer: 0
-  m_Name: Socket_BarrelBody
+  m_Name: Socket_Accessory
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -355,7 +402,7 @@ Transform:
   m_GameObject: {fileID: 4531848874672483148}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.31, y: 0, z: 0}
+  m_LocalPosition: {x: -0.49, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -373,7 +420,52 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4ef1ebafd119042d4a2bed83f1a77e37, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PartSocket
-  SocketType: 3
+  SocketType: 7
+--- !u!1 &4820903533930467381
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4182822170762206104}
+  - component: {fileID: 3938097671834458222}
+  m_Layer: 0
+  m_Name: Socket_CapFront
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4182822170762206104
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4820903533930467381}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.8, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 8262842487322917440}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &3938097671834458222
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4820903533930467381}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4ef1ebafd119042d4a2bed83f1a77e37, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PartSocket
+  SocketType: 1
 --- !u!1 &8767017222573504505
 GameObject:
   m_ObjectHideFlags: 0
@@ -399,7 +491,7 @@ Transform:
   m_GameObject: {fileID: 8767017222573504505}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0.7071068, w: 0.7071068}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: -0.8, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:

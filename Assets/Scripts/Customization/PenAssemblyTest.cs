@@ -17,12 +17,12 @@ public class PenAssemblyTest : MonoBehaviour
 
     private void Start()
     {
-        // 清除编辑器预览残留
+        // 清除编辑器预览残留（通过名字前缀识别）
         for (int i = transform.childCount - 1; i >= 0; i--)
         {
             var child = transform.GetChild(i).gameObject;
-            if (child.hideFlags == HideFlags.DontSave)
-                Destroy(child);
+            if (child.name.StartsWith("[Preview]"))
+                DestroyImmediate(child);
         }
 
         _assembly = GetComponent<PenAssembly>();

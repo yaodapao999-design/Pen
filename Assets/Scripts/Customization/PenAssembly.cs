@@ -15,9 +15,9 @@ public class PenAssembly : MonoBehaviour
     public IReadOnlyList<PenPartInstance> Parts => _parts;
     public PenPartData CurrentBarrelData { get; private set; }
 
-    private void Start()
+    private void Awake()
     {
-        _rb = GetComponent<PenEntity>().rb;
+        _rb = GetComponent<Rigidbody>();
     }
 
     public CapsuleCollider BarrelCollider { get; private set; }
@@ -42,8 +42,12 @@ public class PenAssembly : MonoBehaviour
         _barrelRoot.transform.localRotation = Quaternion.identity;
 
         BarrelCollider = _barrelRoot.GetComponentInChildren<CapsuleCollider>();
+        if (BarrelCollider == null)
+        {
+            Debug.LogError($"Barrel 预制体 {barrelData.DisplayName} 缺少 CapsuleCollider");
+            return;
+        }
 
-        // Barrel 装好后才能初始化聚合器（需要 BarrelCollider）
         _aggregator = new PenPhysicsAggregator(_rb, BarrelCollider);
 
         CurrentBarrelData = barrelData;
