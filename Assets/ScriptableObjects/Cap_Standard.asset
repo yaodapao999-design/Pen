@@ -17,8 +17,7 @@ MonoBehaviour:
   Category: 1
   VisualPrefab: {fileID: 4057139233056458266, guid: 0b1d8d7c8180d481a94f5eb3fec6a143, type: 3}
   Icon: {fileID: 0}
-  PivotOffset: {x: 0, y: 0, z: 0}
-  PlugsInto: 2
+  PlugsInto: 5
   ProvidesSocket: 
   Mass: 0.2
   OverrideGlobalFriction: 0
