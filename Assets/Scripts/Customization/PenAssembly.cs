@@ -105,6 +105,20 @@ public class PenAssembly : MonoBehaviour
         RefreshPhysics();
     }
 
+    /// <summary>
+    /// 仅从装配列表中移除部件（不销毁 GameObject），供 Workshop 模式使用。
+    /// 调用方负责处理 GameObject 的生命周期。
+    /// </summary>
+    public void DetachPart(PenPartInstance part)
+    {
+        if (!_parts.Contains(part)) return;
+
+        part.Detach();
+        _parts.Remove(part);
+
+        RefreshPhysics();
+    }
+
     /// <summary>获取弹射倍率（供 PenEntity.Launch 使用）</summary>
     public float GetLaunchMultiplier()
     {
