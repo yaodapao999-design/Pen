@@ -238,8 +238,18 @@ public class WorkshopPart : MonoBehaviour
         {
             Vector3 pos = _slotAnchorSet ? _slotPosition
                 : WorkshopSlotCalculator.GetSlotFloorCenter(Slot);
-            bool occupied = WorkshopPartRegistry.Instance?.GetAssembledBarrel() != null;
-            _highlighter?.ShowBarrelSlot(pos, occupied);
+            // 检查改装台笔杆是否有子零件 → 有则红色（不可替换），无则绿色（可替换）
+            var existing = WorkshopPartRegistry.Instance?.GetAssembledBarrel();
+            bool blocked = false;
+            if (existing != null)
+            {
+                foreach (var child in existing.GetComponentsInChildren<WorkshopPart>())
+                {
+                    if (child != existing && child.State == PartState.Assembled)
+                    { blocked = true; break; }
+                }
+            }
+            _highlighter?.ShowBarrelSlot(pos, blocked);
         }
         else
         {
@@ -275,12 +285,26 @@ public class WorkshopPart : MonoBehaviour
     {
         if (inSlot)
         {
-            // 改装台只能有一个笔杆：已有则回弹到拖起位置
             var existing = WorkshopPartRegistry.Instance?.GetAssembledBarrel();
             if (existing != null && existing != this)
             {
-                StartCoroutine(AnimateReturnToStart());
-                return;
+                // 检查旧笔杆上是否有子零件
+                bool hasChildren = false;
+                foreach (var child in existing.GetComponentsInChildren<WorkshopPart>())
+                {
+                    if (child != existing && child.State == PartState.Assembled)
+                    { hasChildren = true; break; }
+                }
+
+                if (hasChildren)
+                {
+                    // 有子零件 → 拒绝替换，回弹
+                    StartCoroutine(AnimateReturnToStart());
+                    return;
+                }
+
+                // 无子零件 → 替换，旧笔杆移到新笔杆起始位置
+                StartCoroutine(AnimateSwapOut(existing, _dragStartPosition, _dragStartRotation));
             }
 
             StartCoroutine(AnimateBarrelSnap());

@@ -36,4 +36,8 @@ public class PenPartData : ScriptableObject
     [Header("--- 经济 ---")]
     public int BuyPrice;
 
+    [Header("--- 效果 ---")]
+    // 该零件提供的效果列表，每个效果是一个 PenPartEffect SO
+    // 添加新功能只需创建新 Effect SO 并拖进来
+    public PenPartEffect[] Effects;
 }
