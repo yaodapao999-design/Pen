@@ -2,10 +2,19 @@ using System.Collections;
 using System.Collections.Generic;
 using Unity.Cinemachine;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 /// <summary>
-/// 改装场景总控制器
-/// 负责镜头切换、抽屉动画、笔的定位，以及 WorkshopPart 的初始化与清理。
+/// 改装场景总控制器。
+///
+/// 职责：
+///   1. 镜头切换 + 抽屉动画
+///   2. 进入改装：ClearBattleView → CreateWorkshopView（从数据创建容器树）
+///   3. 退出改装：WriteBackData（从容器树读回数据）→ DestroyWorkshopView → BuildBattleView
+///   4. 集中输入分发（一次 RaycastAll → 通知 WorkshopPart）
+///
+/// 不直接查找 WorkshopPart，通过 WorkshopPartRegistry 获取。
+/// 不直接计算改装台位置，通过 WorkshopSlotCalculator 获取。
 /// </summary>
 public class WorkshopController : MonoBehaviour
 {
@@ -26,6 +35,11 @@ public class WorkshopController : MonoBehaviour
     public PenPartData CurrentBarrel;
     public PenPartData[] CurrentParts;
 
+    [Header("退出按钮")]
+    public RectTransform ExitButton;
+    public float ShakeIntensity = 10f;
+    public float ShakeDuration = 0.4f;
+
     [Header("引用")]
     public WorkshopPenSpawner PenSpawner;
 
@@ -34,37 +48,203 @@ public class WorkshopController : MonoBehaviour
     private Rigidbody _penRb;
     private float _drawerClosedZ;
     private bool _isTransitioning;
+    private bool _isShaking;
     private Vector3 _penOriginalPosition;
     private Quaternion _penOriginalRotation;
 
+    private WorkshopPartRegistry Registry => WorkshopPartRegistry.Instance;
+
+    // 悬停高亮（脉冲发光）
+    private WorkshopPart _hoveredPart;
+    private WorkshopPart _transparentBarrel; // 悬停内部零件时笔杆变半透明
+    private static readonly int EmissionColor = Shader.PropertyToID("_EmissionColor");
+    [Header("悬停高亮")]
+    public Color HoverColorMin = new(0.05f, 0.05f, 0.05f, 1f);
+    public Color HoverColorMax = new(0.3f, 0.3f, 0.3f, 1f);
+    public float HoverPulseSpeed = 3f;
+    public float BarrelTransparentAlpha = 0.3f;
+
+    // ─── 初始化 ───────────────────────────────────────────────────────────────
+
     private void Start()
     {
+        // 确保 Registry 存在
+        if (WorkshopPartRegistry.Instance == null)
+        {
+            var go = new GameObject("WorkshopPartRegistry");
+            go.AddComponent<WorkshopPartRegistry>();
+        }
+
         if (DrawerVCam != null) DrawerVCam.Priority = 0;
         _brain = Camera.main.GetComponent<CinemachineBrain>();
         if (CurrentPen != null) _penRb = CurrentPen.GetComponent<Rigidbody>();
         if (DrawerTransform != null) _drawerClosedZ = DrawerTransform.localPosition.z;
-        if (WorkshopSlot != null && PenSpawner != null)
-            WorkshopSlot.DragArea = PenSpawner.SpawnArea;
 
-        // 测试用：在 Start 里初始化笔的装配，正式版应由战斗系统传入
         if (CurrentBarrel != null && CurrentPen != null)
         {
-            CurrentPen.SetBarrel(CurrentBarrel);
-            foreach (var part in CurrentParts)
+            CurrentPen.InitData(CurrentBarrel, CurrentParts);
+            CurrentPen.BuildBattleView();
+        }
+    }
+
+    // ─── 输入 ─────────────────────────────────────────────────────────────────
+
+    private void Update()
+    {
+        if (!_inDrawer || _isTransitioning) return;
+
+        var mouse = Mouse.current;
+        if (mouse == null) return;
+
+        var cam = Camera.main;
+        if (cam == null) return;
+
+        var ray = cam.ScreenPointToRay(mouse.position.ReadValue());
+
+        // 射线检测：优先子零件，兜底笔杆
+        var target = RaycastBestTarget(ray);
+
+        // ── 悬停高亮（每帧，不限按下） ──
+        UpdateHover(target);
+
+        // ── 按下拖拽 ──
+        if (mouse.leftButton.wasPressedThisFrame && target != null)
+        {
+            ClearHover(); // 拖拽开始时关掉高亮
+            target.BeginDrag();
+        }
+    }
+
+    /// <summary>射线检测：优先子零件，兜底笔杆</summary>
+    private WorkshopPart RaycastBestTarget(Ray ray)
+    {
+        WorkshopPart bestPart = null;
+        WorkshopPart bestBarrel = null;
+        float bestPartDist = float.MaxValue;
+        float bestBarrelDist = float.MaxValue;
+
+        foreach (var hit in Physics.RaycastAll(ray))
+        {
+            var wp = hit.collider.GetComponent<WorkshopPart>();
+            if (wp == null || wp.State == WorkshopPart.PartState.Snapping) continue;
+
+            if (wp.IsBarrel)
             {
-                if (part == null) continue;
-                var socket = CurrentPen.GetSocket(part.PlugsInto);
-                if (socket != null) CurrentPen.AddPart(part, socket);
+                if (hit.distance < bestBarrelDist)
+                { bestBarrelDist = hit.distance; bestBarrel = wp; }
+            }
+            else
+            {
+                if (hit.distance < bestPartDist)
+                { bestPartDist = hit.distance; bestPart = wp; }
+            }
+        }
+
+        return bestPart ?? bestBarrel;
+    }
+
+    /// <summary>悬停高亮：脉冲发光 + 内部零件时笔杆变半透明</summary>
+    private void UpdateHover(WorkshopPart target)
+    {
+        if (target != _hoveredPart)
+        {
+            ClearHover();
+            _hoveredPart = target;
+
+            // 悬停到非笔杆的已装配零件 → 笔杆变半透明，露出内部
+            if (_hoveredPart != null && !_hoveredPart.IsBarrel
+                && _hoveredPart.State == WorkshopPart.PartState.Assembled)
+            {
+                var barrel = Registry?.GetAssembledBarrel();
+                if (barrel != null)
+                {
+                    _transparentBarrel = barrel;
+                    SetAlpha(barrel, BarrelTransparentAlpha);
+                }
+            }
+        }
+
+        if (_hoveredPart != null)
+        {
+            float pulse = Mathf.PingPong(Time.time * HoverPulseSpeed, 1f);
+            Color emission = Color.Lerp(HoverColorMin, HoverColorMax, pulse);
+            SetEmission(_hoveredPart, emission);
+        }
+    }
+
+    private void ClearHover()
+    {
+        if (_hoveredPart != null)
+        {
+            SetEmission(_hoveredPart, Color.black);
+            _hoveredPart = null;
+        }
+
+        // 恢复笔杆不透明
+        if (_transparentBarrel != null)
+        {
+            SetAlpha(_transparentBarrel, 1f);
+            _transparentBarrel = null;
+        }
+    }
+
+    private static void SetAlpha(WorkshopPart wp, float alpha)
+    {
+        foreach (var r in wp.GetComponentsInChildren<Renderer>())
+        {
+            foreach (var mat in r.materials)
+            {
+                var c = mat.color;
+                mat.color = new Color(c.r, c.g, c.b, alpha);
+                if (alpha < 1f)
+                {
+                    mat.SetFloat("_Surface", 1);
+                    mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                    mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                    mat.renderQueue = 3000;
+                }
+                else
+                {
+                    mat.SetFloat("_Surface", 0);
+                    mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.One);
+                    mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.Zero);
+                    mat.renderQueue = -1;
+                }
             }
         }
     }
 
-    /// <summary>同一个按钮切换进入/退出改装</summary>
+    private static void SetEmission(WorkshopPart wp, Color color)
+    {
+        foreach (var r in wp.GetComponentsInChildren<Renderer>())
+        {
+            foreach (var mat in r.materials)
+            {
+                mat.EnableKeyword("_EMISSION");
+                mat.SetColor(EmissionColor, color);
+            }
+        }
+    }
+
+    // ─── 进入/退出 ────────────────────────────────────────────────────────────
+
     public void ToggleWorkshop()
     {
         if (_isTransitioning) return;
-        if (_inDrawer) FinishWorkshop();
-        else EnterWorkshop();
+
+        if (_inDrawer)
+        {
+            if (Registry == null || !Registry.HasAssembledBarrel())
+            {
+                if (ExitButton != null) StartCoroutine(ShakeButton());
+                return;
+            }
+            FinishWorkshop();
+        }
+        else
+        {
+            EnterWorkshop();
+        }
     }
 
     public void EnterWorkshop()
@@ -72,7 +252,6 @@ public class WorkshopController : MonoBehaviour
         if (_inDrawer || _isTransitioning) return;
         _inDrawer = true;
 
-        // 冻结笔的物理，防止在改装台上掉落
         if (_penRb != null)
         {
             _penRb.linearVelocity = Vector3.zero;
@@ -80,7 +259,6 @@ public class WorkshopController : MonoBehaviour
             _penRb.isKinematic = true;
         }
 
-        WorkshopSlot?.Activate();
         StartCoroutine(TransitionToDrawer());
     }
 
@@ -90,229 +268,207 @@ public class WorkshopController : MonoBehaviour
         StartCoroutine(TransitionFromDrawer());
     }
 
-    // ─── 进入改装协程 ──────────────────────────────────────────────────────────
+    // ─── 进入改装 ─────────────────────────────────────────────────────────────
 
     private IEnumerator TransitionToDrawer()
     {
         _isTransitioning = true;
         if (DrawerVCam != null) DrawerVCam.Priority = DrawerVCamPriority;
 
-        // 等待相机 blend 完成
         yield return new WaitForSeconds(GetBlendDuration());
 
-        // 记录战斗原位，直接设世界坐标（不动层级）
-        if (WorkshopSlot != null && CurrentPen != null)
-        {
-            _penOriginalPosition = CurrentPen.transform.position;
-            _penOriginalRotation = CurrentPen.transform.rotation;
+        _penOriginalPosition = CurrentPen.transform.position;
+        _penOriginalRotation = CurrentPen.transform.rotation;
 
-            var slotCol = WorkshopSlot.GetComponent<BoxCollider>();
+        CurrentPen.ClearBattleView();
+        SetPenEntityVisible(false);
 
-            // slot 底面中心的世界坐标
-            Vector3 slotFloor = WorkshopSlot.transform.TransformPoint(new Vector3(
-                slotCol.center.x,
-                slotCol.center.y - slotCol.size.y * 0.5f,
-                slotCol.center.z));
-            CurrentPen.transform.position = slotFloor;
-
-            // 先应用躺平旋转，再量包围盒（旋转影响实际底部高度）
-            var capsule = CurrentPen.GetComponentInChildren<CapsuleCollider>();
-            CurrentPen.transform.rotation = WorkshopSlot.transform.rotation *
-                ((capsule != null && capsule.direction == 1)
-                    ? Quaternion.Euler(0, 0, 90)
-                    : Quaternion.identity);
-
-            // 根据视觉包围盒底部贴到 slot 底面，无需硬编码半径
-            var penRenderers = CurrentPen.GetComponentsInChildren<Renderer>();
-            if (penRenderers.Length > 0)
-            {
-                var wb = penRenderers[0].bounds;
-                foreach (var r in penRenderers) wb.Encapsulate(r.bounds);
-                CurrentPen.transform.position += Vector3.up * (slotFloor.y - wb.min.y);
-            }
-        }
-
-        // 先生成所有内容（抽屉关着，玩家看不到），避免零件闪现
-        InitAssembledPartsAsWorkshopParts();
+        CreateWorkshopView();
         if (PenSpawner != null) PenSpawner.SpawnParts();
 
-        // 收集所有 Loose 零件，冻结物理，防止抽屉运动时将其弹飞
-        var looseParts = new List<Transform>();
-        foreach (var wp in FindObjectsByType<WorkshopPart>(FindObjectsSortMode.None))
-        {
-            if (wp.State == WorkshopPart.PartState.Loose)
-            {
-                var rb = wp.GetComponent<Rigidbody>();
-                if (rb != null) rb.isKinematic = true;
-                looseParts.Add(wp.transform);
-            }
-        }
+        var frozenParts = FreezeLooseParts();
 
-        // 与抽屉完全同步地打开，Loose 零件随抽屉同步位移
         if (DrawerTransform != null)
-            yield return MoveDrawer(_drawerClosedZ + DrawerOpenOffset, movePen: true, looseParts);
+            yield return AnimateDrawer(_drawerClosedZ + DrawerOpenOffset, frozenParts);
 
-        // 抽屉打开完毕，释放零件物理（抽屉墙壁自然围住）
-        foreach (var t in looseParts)
-        {
-            if (t == null) continue;
-            var rb = t.GetComponent<Rigidbody>();
-            if (rb != null) rb.isKinematic = false;
-        }
+        UnfreezeAll(frozenParts);
+
+        // 抽屉打开后更新锚点（世界坐标已改变）
+        var barrel = Registry?.GetAssembledBarrel();
+        if (barrel != null)
+            barrel.SetSlotAnchor(barrel.transform.position, barrel.transform.rotation);
 
         _isTransitioning = false;
     }
 
-    // ─── 离开改装协程 ──────────────────────────────────────────────────────────
+    // ─── 退出改装 ─────────────────────────────────────────────────────────────
 
     private IEnumerator TransitionFromDrawer()
     {
         _isTransitioning = true;
-        WorkshopSlot?.Deactivate();
 
-        // 冻结所有 Loose 零件，随抽屉同步移回
-        var looseParts = new List<Transform>();
-        foreach (var wp in FindObjectsByType<WorkshopPart>(FindObjectsSortMode.None))
-        {
-            if (wp.State == WorkshopPart.PartState.Loose)
-            {
-                var rb = wp.GetComponent<Rigidbody>();
-                if (rb != null) rb.isKinematic = true;
-                looseParts.Add(wp.transform);
-            }
-        }
+        var frozenParts = FreezeLooseParts();
 
-        // 关闭抽屉，笔和零件通过世界坐标同步移回（不动层级）
         if (DrawerTransform != null)
-            yield return MoveDrawer(_drawerClosedZ, movePen: true, looseParts);
+            yield return AnimateDrawer(_drawerClosedZ, frozenParts);
 
-        // ── 抽屉已关闭，以下操作玩家不可见 ──
+        // 抽屉关闭后：写回数据 → 销毁容器 → 重建战斗视图
+        WriteBackData();
+        DestroyAllWorkshopParts();
 
-        // 恢复所有已装配零件的内部视觉
-        if (CurrentPen != null)
-        {
-            foreach (var part in CurrentPen.Parts)
-            {
-                if (part.GameObject != null)
-                    part.GameObject.SetActive(true);
-            }
-        }
-
-        // 销毁所有 WorkshopPart 容器
-        if (PenSpawner != null) PenSpawner.ClearParts();
-
-        // 还原笔到战斗原位（同时设 Transform 和 Rigidbody，确保物理引擎同步）
-        if (CurrentPen != null)
-        {
-            CurrentPen.transform.position = _penOriginalPosition;
-            CurrentPen.transform.rotation = _penOriginalRotation;
-        }
+        SetPenEntityVisible(true);
+        CurrentPen.transform.SetPositionAndRotation(_penOriginalPosition, _penOriginalRotation);
         if (_penRb != null)
         {
             _penRb.position = _penOriginalPosition;
             _penRb.rotation = _penOriginalRotation;
         }
 
-        // 切回战斗镜头
+        CurrentPen.BuildBattleView();
+
         if (DrawerVCam != null) DrawerVCam.Priority = 0;
 
-        // 等一帧让物理引擎消化位置变化，再等相机 blend 完成
         yield return null;
         yield return new WaitForSeconds(GetBlendDuration());
 
         if (_penRb != null) _penRb.isKinematic = false;
-        if (CurrentPen != null) CurrentPen.RefreshPhysics();
 
         _inDrawer = false;
         _isTransitioning = false;
     }
 
-    // ─── 已装配零件初始化 ──────────────────────────────────────────────────────
+    // ─── 视图创建/销毁 ────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// 为笔上所有已装配的零件创建可交互的 WorkshopPart 容器。
-    /// 同时隐藏 PenAssembly 内部的视觉 GO，改由 WorkshopPart 容器呈现视觉。
-    /// </summary>
-    private void InitAssembledPartsAsWorkshopParts()
+    private void CreateWorkshopView()
     {
-        if (CurrentPen == null || WorkshopSlot == null) return;
+        if (CurrentPen == null || CurrentPen.BarrelData == null) return;
 
-        foreach (var part in CurrentPen.Parts)
+        var dragArea = PenSpawner != null ? PenSpawner.SpawnArea : null;
+        var floorCenter = WorkshopSlotCalculator.GetSlotFloorCenter(WorkshopSlot);
+
+        // 笔杆
+        var barrelWP = WorkshopPartFactory.Create(
+            CurrentPen.BarrelData, floorCenter, Quaternion.identity,
+            WorkshopSlot, dragArea);
+
+        WorkshopSlotCalculator.PlaceBarrelOnSlot(barrelWP, WorkshopSlot);
+        barrelWP.SetAssembled(isRoot: true);
+
+        // 已装配零件
+        foreach (var entry in CurrentPen.AssembledParts)
         {
-            if (part.AttachedSocket == null) continue;
-
-            // 隐藏 PenAssembly 内部视觉，workshop 中用独立容器替代
-            if (part.GameObject != null)
-                part.GameObject.SetActive(false);
-
-            // 创建 WorkshopPart 容器，放置在对应 socket 的世界位置
-            var container = new GameObject($"WP_{part.Data.PartID}");
-            container.transform.SetPositionAndRotation(
-                part.AttachedSocket.transform.position,
-                part.AttachedSocket.transform.rotation);
-
-            GameObject visual = null;
-            if (part.Data.VisualPrefab != null)
+            var socket = FindSocket(barrelWP, entry.Socket);
+            if (socket == null)
             {
-                visual = Instantiate(part.Data.VisualPrefab, container.transform);
-                visual.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
-                // 禁用 visual 自带的所有碰撞体，确保鼠标射线只命中容器上的 BoxCollider
-                foreach (var c in visual.GetComponentsInChildren<Collider>())
-                    c.enabled = false;
+                Debug.LogWarning($"[Workshop] 笔杆容器上找不到 Socket {entry.Socket}");
+                continue;
             }
 
-            var col = container.AddComponent<BoxCollider>();
-            FitBoxCollider(col, visual);
+            var partWP = WorkshopPartFactory.Create(
+                entry.Data, socket.transform.position, socket.transform.rotation,
+                WorkshopSlot, dragArea);
 
-            var rb = container.AddComponent<Rigidbody>();
-            rb.mass = part.Data.Mass;
-
-            // WorkshopPart 的 Awake 在 AddComponent 时立即执行，_rb/_cam 已就绪
-            var wp = container.AddComponent<WorkshopPart>();
-            wp.PartData = part.Data;
-            wp.TargetAssembly = CurrentPen;
-            wp.Slot = WorkshopSlot;
-            wp.DragArea = PenSpawner != null ? PenSpawner.SpawnArea : null;
-            wp.SetAssembled(CurrentPen, part);
+            partWP.transform.SetParent(socket.transform);
+            partWP.transform.localPosition = Vector3.zero;
+            partWP.transform.localRotation = Quaternion.identity;
+            partWP.SetAssembled();
         }
     }
 
-    // ─── 工具方法 ──────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// 暂时置零容器旋转，从 Renderer 包围盒精确拟合 BoxCollider，再还原旋转。
-    /// 避免硬编码碰撞体尺寸，适配任意大小的视觉预制体。
-    /// </summary>
-    private static void FitBoxCollider(BoxCollider col, GameObject visual)
+    private void WriteBackData()
     {
-        if (visual == null) { col.size = Vector3.one * 0.08f; return; }
+        if (CurrentPen == null) return;
 
-        var renderers = visual.GetComponentsInChildren<Renderer>();
-        if (renderers.Length == 0) { col.size = Vector3.one * 0.08f; return; }
+        var barrel = Registry?.GetAssembledBarrel();
+        if (barrel == null)
+        {
+            Debug.LogWarning("[Workshop] 退出时找不到 Assembled 笔杆，保留原数据");
+            return;
+        }
 
-        // 置零旋转后量包围盒，得到无旋转失真的本地尺寸
-        var savedRot = col.transform.rotation;
-        col.transform.rotation = Quaternion.identity;
-        var lb = renderers[0].bounds;
-        foreach (var r in renderers) lb.Encapsulate(r.bounds);
-        col.center = col.transform.InverseTransformPoint(lb.center);
-        col.size = lb.size;
-        col.transform.rotation = savedRot;
+        var parts = new List<PenAssembly.PartEntry>();
+        foreach (var socket in barrel.GetComponentsInChildren<PartSocket>())
+        {
+            var child = socket.GetComponentInChildren<WorkshopPart>();
+            if (child != null && child != barrel && child.PartData != null)
+                parts.Add(new PenAssembly.PartEntry(child.PartData, socket.SocketType));
+        }
+
+        CurrentPen.SetData(barrel.PartData, parts);
     }
 
-    private IEnumerator MoveDrawer(float targetZ, bool movePen = false, List<Transform> looseParts = null)
+    private void DestroyAllWorkshopParts()
+    {
+        if (Registry == null) return;
+        // 拷贝一份再遍历，避免修改集合
+        var all = new List<WorkshopPart>(Registry.All);
+        foreach (var wp in all)
+            Destroy(wp.gameObject);
+    }
+
+    // ─── 工具 ─────────────────────────────────────────────────────────────────
+
+    private static PartSocket FindSocket(WorkshopPart barrelWP, SocketType type)
+    {
+        foreach (var s in barrelWP.GetComponentsInChildren<PartSocket>())
+            if (s.SocketType == type) return s;
+        return null;
+    }
+
+    private void SetPenEntityVisible(bool visible)
+    {
+        if (CurrentPen == null) return;
+        foreach (var r in CurrentPen.GetComponentsInChildren<Renderer>())
+            r.enabled = visible;
+        foreach (var c in CurrentPen.GetComponentsInChildren<Collider>())
+            c.enabled = visible;
+    }
+
+    private List<(Transform t, Vector3 start)> FreezeLooseParts()
+    {
+        var result = new List<(Transform, Vector3)>();
+        if (Registry == null) return result;
+        foreach (var wp in Registry.All)
+        {
+            if (wp.State == WorkshopPart.PartState.Loose)
+            {
+                var rb = wp.GetComponent<Rigidbody>();
+                if (rb != null) rb.isKinematic = true;
+                result.Add((wp.transform, wp.transform.position));
+            }
+        }
+        return result;
+    }
+
+    private void UnfreezeAll(List<(Transform t, Vector3 start)> parts)
+    {
+        foreach (var (t, _) in parts)
+        {
+            if (t == null) continue;
+            var rb = t.GetComponent<Rigidbody>();
+            if (rb != null)
+            {
+                rb.isKinematic = false;
+                rb.linearVelocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+            }
+        }
+    }
+
+    private IEnumerator AnimateDrawer(float targetZ, List<(Transform t, Vector3 start)> frozenParts)
     {
         float startZ = DrawerTransform.localPosition.z;
-        Vector3 penWorldStart = movePen && CurrentPen != null ? CurrentPen.transform.position : Vector3.zero;
         Vector3 drawerWorldStart = DrawerTransform.position;
 
-        // 记录每个 Loose 零件的初始世界坐标
-        Vector3[] looseStarts = null;
-        if (looseParts != null)
+        // 收集根级 Assembled 容器（子物体通过层级自动跟随）
+        var assembledRoots = new List<(Transform t, Vector3 start)>();
+        if (Registry != null)
         {
-            looseStarts = new Vector3[looseParts.Count];
-            for (int i = 0; i < looseParts.Count; i++)
-                looseStarts[i] = looseParts[i] != null ? looseParts[i].position : Vector3.zero;
+            foreach (var wp in Registry.All)
+            {
+                if (wp.State == WorkshopPart.PartState.Assembled && wp.transform.parent == null)
+                    assembledRoots.Add((wp.transform, wp.transform.position));
+            }
         }
 
         float t = 0f;
@@ -320,21 +476,18 @@ public class WorkshopController : MonoBehaviour
         {
             t += Time.deltaTime / DrawerOpenDuration;
             float smooth = Mathf.SmoothStep(0f, 1f, t);
-            float z = Mathf.Lerp(startZ, targetZ, smooth);
             DrawerTransform.localPosition = new Vector3(
                 DrawerTransform.localPosition.x,
                 DrawerTransform.localPosition.y,
-                z);
+                Mathf.Lerp(startZ, targetZ, smooth));
 
-            Vector3 drawerDelta = DrawerTransform.position - drawerWorldStart;
+            Vector3 delta = DrawerTransform.position - drawerWorldStart;
 
-            if (movePen && CurrentPen != null)
-                CurrentPen.transform.position = penWorldStart + drawerDelta;
+            foreach (var (tr, s) in assembledRoots)
+                if (tr != null) tr.position = s + delta;
 
-            if (looseParts != null)
-                for (int i = 0; i < looseParts.Count; i++)
-                    if (looseParts[i] != null)
-                        looseParts[i].position = looseStarts[i] + drawerDelta;
+            foreach (var (tr, s) in frozenParts)
+                if (tr != null) tr.position = s + delta;
 
             yield return null;
         }
@@ -342,7 +495,25 @@ public class WorkshopController : MonoBehaviour
 
     private float GetBlendDuration()
     {
-        if (_brain == null) return 1f;
-        return _brain.DefaultBlend.Time;
+        return _brain != null ? _brain.DefaultBlend.Time : 1f;
+    }
+
+    private IEnumerator ShakeButton()
+    {
+        if (_isShaking) yield break;
+        _isShaking = true;
+
+        var origin = ExitButton.anchoredPosition;
+        float elapsed = 0f;
+        while (elapsed < ShakeDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            ExitButton.anchoredPosition = origin + new Vector2(
+                Random.Range(-ShakeIntensity, ShakeIntensity),
+                Random.Range(-ShakeIntensity, ShakeIntensity));
+            yield return null;
+        }
+        ExitButton.anchoredPosition = origin;
+        _isShaking = false;
     }
 }

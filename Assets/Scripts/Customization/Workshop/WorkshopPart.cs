@@ -1,50 +1,77 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// 改装场景零件统一交互
-/// - Assembled：kinematic，跟随 socket
-/// - Dragging：动态 Rigidbody + MovePosition，碰撞体生效不穿墙
-/// - Loose：动态 Rigidbody + 重力，抽屉墙壁自然围住
+/// 改装场景零件统一交互容器。
 ///
-/// 拖拽机制：
-///   保持 Rigidbody 动态（非 kinematic），关闭重力、加高阻尼，
-///   用 Rigidbody.MovePosition 在 FixedUpdate 中驱动移动。
-///   物理引擎自动处理碰撞，零件不会穿墙。
+/// 体验特性：
+///   - 磁吸引导：拖拽接近 socket 时目标位置被吸引偏移
+///   - 吸附预览：接近 socket 时在 socket 位置显示半透明预览
+///   - 吸附动画：EaseOutCubic 平滑飞入 + 弹跳缩放
+///   - 替换弹出：旧零件向拖来反方向弹出
+///   - 无效反馈：放不了时抖动回弹而非直接掉落
+///   - 音效接口：吸附/弹出/无效时播放音效
 /// </summary>
 public class WorkshopPart : MonoBehaviour
 {
-    public enum PartState { Assembled, Dragging, Loose }
-
-    [Header("配置")]
-    public PenPartData PartData;
-    public float SnapDistance = 0.15f;
-    public float DragLiftHeight = 0.03f;
-    public float DragDamping = 50f;
-    public float DragSmoothSpeed = 30f;
+    public enum PartState { Assembled, Dragging, Snapping, Loose }
 
     [Header("引用")]
-    public PenAssembly TargetAssembly;
+    public PenPartData PartData;
     public WorkshopSlot Slot;
     public BoxCollider DragArea;
 
     public PartState State { get; private set; } = PartState.Loose;
+    public bool IsBarrel => PartData != null && PartData.Category == PartType.Barrel;
+
+    // 从全局单例读取配置
+    private static WorkshopConfig Cfg => WorkshopConfig.Instance;
+    private float SnapDistance => Cfg != null ? Cfg.SnapDistance : 0.15f;
+    private float DragLiftHeight => Cfg != null ? Cfg.DragLiftHeight : 0.03f;
+    private float DragDamping => Cfg != null ? Cfg.DragDamping : 50f;
+    private float SnapDuration => Cfg != null ? Cfg.SnapDuration : 0.12f;
+    private float BounceDuration => Cfg != null ? Cfg.BounceDuration : 0.08f;
+    private float BounceScale => Cfg != null ? Cfg.BounceScale : 1.05f;
+    private float ScatterForce => Cfg != null ? Cfg.ScatterForce : 1.5f;
+    private float MagnetStrength => Cfg != null ? Cfg.MagnetStrength : 0.3f;
+    private float InvalidShakeDuration => Cfg != null ? Cfg.InvalidShakeDuration : 0.2f;
+    private float InvalidShakeIntensity => Cfg != null ? Cfg.InvalidShakeIntensity : 0.02f;
+    private AudioClip SnapSound => Cfg != null ? Cfg.SnapSound : null;
+    private AudioClip EjectSound => Cfg != null ? Cfg.EjectSound : null;
+    private AudioClip InvalidSound => Cfg != null ? Cfg.InvalidSound : null;
 
     private Rigidbody _rb;
     private Collider _col;
     private Camera _cam;
     private SocketHighlighter _highlighter;
+    private AudioSource _audio;
     private bool _isDragging;
     private Plane _dragPlane;
     private Vector3 _dragOffset;
     private Vector3 _dragTarget;
-    private PartState _stateBeforeDrag;
     private float _originalDrag;
     private float _originalAngularDrag;
 
-    // Assembled 状态专用
-    private PartSocket _originalSocket;
-    private PenPartInstance _linkedInstance;
+    // 磁吸 + 预览 + 替换暗示
+    private PartSocket _nearestSocket;
+    private GameObject _preview;
+    private WorkshopPart _threattenedOccupant;
+    private Vector3 _threattenedOriginalScale;
+
+    // 拖拽起始位置（笔杆回弹用）
+    private Vector3 _dragStartPosition;
+    private Quaternion _dragStartRotation;
+
+    // 拖拽中忽略碰撞的目标
+    private Collider _ignoredCollider;
+
+    // 笔杆专用
+    private Vector3 _slotPosition;
+    private Quaternion _slotRotation;
+    private bool _slotAnchorSet;
+
+    // ─── 生命周期 ─────────────────────────────────────────────────────────────
 
     private void Awake()
     {
@@ -56,86 +83,107 @@ public class WorkshopPart : MonoBehaviour
         _originalAngularDrag = _rb.angularDamping;
     }
 
-    public void SetAssembled(PenAssembly assembly, PenPartInstance linkedInstance)
+    private void OnEnable() => WorkshopPartRegistry.Instance?.Register(this);
+    private void OnDisable() => WorkshopPartRegistry.Instance?.Unregister(this);
+
+    // ─── 公共 API ─────────────────────────────────────────────────────────────
+
+    public void SetSlotAnchor(Vector3 position, Quaternion rotation)
     {
-        TargetAssembly = assembly;
-        _linkedInstance = linkedInstance;
+        _slotPosition = position;
+        _slotRotation = rotation;
+        _slotAnchorSet = true;
+    }
+
+    public void SetAssembled(bool isRoot = false)
+    {
         State = PartState.Assembled;
         _rb.isKinematic = true;
         _rb.Sleep();
-
-        if (linkedInstance?.AttachedSocket != null)
-        {
-            transform.SetParent(linkedInstance.AttachedSocket.transform);
-            transform.localPosition = Vector3.zero;
-            transform.localRotation = Quaternion.identity;
-        }
+        // 子零件设为 trigger：不参与物理碰撞但仍能被 Raycast 命中，可直接拖拽
+        if (!isRoot && _col != null)
+            _col.isTrigger = true;
+        WorkshopPartRegistry.Instance?.NotifyStateChanged(this);
     }
 
     public void SetLoose()
     {
         State = PartState.Loose;
-        _linkedInstance = null;
         transform.SetParent(null);
         _rb.isKinematic = false;
         _rb.useGravity = true;
         _rb.linearDamping = _originalDrag;
         _rb.angularDamping = _originalAngularDrag;
+        if (_col != null)
+        {
+            _col.enabled = true;
+            _col.isTrigger = false;
+        }
+        WorkshopPartRegistry.Instance?.NotifyStateChanged(this);
     }
 
-    // ─── 输入处理 ─────────────────────────────────────────────────────────────
+    /// <summary>定向弹出（向 awayFrom 的反方向）</summary>
+    public void Eject(Vector3 awayFrom)
+    {
+        SetLoose();
+        Vector3 dir = (transform.position - awayFrom).normalized;
+        if (dir.sqrMagnitude < 0.01f)
+            dir = new Vector3(Random.Range(-1f, 1f), 0.5f, Random.Range(-1f, 1f)).normalized;
+        dir.y = Mathf.Max(dir.y, 0.3f);
+        _rb.AddForce(dir * ScatterForce, ForceMode.Impulse);
+        PlaySound(EjectSound);
+    }
+
+    // ─── 拖拽 ─────────────────────────────────────────────────────────────────
 
     private void Update()
     {
+        if (!_isDragging) return;
         if (_cam == null) return;
         var mouse = Mouse.current;
         if (mouse == null) return;
 
-        // 按下：RaycastAll 穿透抽屉壁，找最近的 WorkshopPart
-        if (!_isDragging && mouse.leftButton.wasPressedThisFrame)
-        {
-            var ray = _cam.ScreenPointToRay(mouse.position.ReadValue());
-            float closestDist = float.MaxValue;
-            WorkshopPart closest = null;
-            foreach (var hit in Physics.RaycastAll(ray))
-            {
-                var wp = hit.collider.GetComponent<WorkshopPart>();
-                if (wp != null && hit.distance < closestDist)
-                {
-                    closestDist = hit.distance;
-                    closest = wp;
-                }
-            }
-
-            if (closest == this)
-                HandleMouseDown();
-        }
-
-        if (!_isDragging) return;
-
-        // 持续拖拽：计算目标位置（实际移动在 FixedUpdate 由 MovePosition 执行）
         if (mouse.leftButton.isPressed)
         {
             var ray = _cam.ScreenPointToRay(mouse.position.ReadValue());
             if (_dragPlane.Raycast(ray, out float enter))
             {
                 Vector3 target = ray.GetPoint(enter) + _dragOffset;
-
                 if (DragArea != null)
                 {
                     var b = DragArea.bounds;
                     target.x = Mathf.Clamp(target.x, b.min.x, b.max.x);
                     target.z = Mathf.Clamp(target.z, b.min.z, b.max.z);
                 }
-
                 target.y += DragLiftHeight;
+
+                // 磁吸引导：非笔杆零件接近 socket 时目标被吸引偏移
+                if (!IsBarrel)
+                {
+                    var socket = FindNearestSocket();
+                    UpdatePreview(socket);
+                    if (socket != null)
+                    {
+                        float dist = Vector3.Distance(
+                            _col.ClosestPoint(socket.transform.position),
+                            socket.transform.position);
+                        if (dist < SnapDistance)
+                        {
+                            float pull = (1f - dist / SnapDistance) * MagnetStrength;
+                            target = Vector3.Lerp(target, socket.transform.position, pull);
+                        }
+                    }
+                }
+
                 _dragTarget = target;
             }
 
-            _highlighter?.UpdateNearest(transform.position, SnapDistance);
+            if (IsBarrel)
+                _highlighter?.UpdateBarrelNearest(transform.position, SnapDistance);
+            else
+                _highlighter?.UpdateNearest(_col, SnapDistance);
         }
 
-        // 松手
         if (mouse.leftButton.wasReleasedThisFrame)
             HandleMouseUp();
     }
@@ -146,96 +194,243 @@ public class WorkshopPart : MonoBehaviour
             _rb.MovePosition(_dragTarget);
     }
 
-    private void HandleMouseDown()
+    public void BeginDrag()
     {
-        _stateBeforeDrag = State;
+        if (State == PartState.Snapping) return;
 
-        if (_stateBeforeDrag == PartState.Assembled)
-            _originalSocket = _linkedInstance?.AttachedSocket;
+        _dragStartPosition = transform.position;
+        _dragStartRotation = transform.rotation;
 
-        // 创建拖拽平面（部件当前高度的水平面）
         _dragPlane = new Plane(Vector3.up, transform.position);
-
-        // 在平面上计算拖拽偏移，防止零件跳到鼠标中心
         var ray = _cam.ScreenPointToRay(Mouse.current.position.ReadValue());
-        if (_dragPlane.Raycast(ray, out float enter))
-            _dragOffset = transform.position - ray.GetPoint(enter);
-        else
-            _dragOffset = Vector3.zero;
+        _dragOffset = _dragPlane.Raycast(ray, out float enter)
+            ? transform.position - ray.GetPoint(enter)
+            : Vector3.zero;
 
-        if (_stateBeforeDrag == PartState.Assembled)
-            DetachFromPen();
+        if (State == PartState.Assembled)
+            transform.SetParent(null);
 
-        // 动态 Rigidbody：关重力、加高阻尼，MovePosition 驱动且碰撞生效
+        if (_col != null)
+        {
+            _col.enabled = true;
+            _col.isTrigger = false;
+        }
+
+        // 拖拽中忽略笔杆碰撞，防止靠近时抖动
+        IgnoreBarrelCollision(true);
+
         _rb.isKinematic = false;
         _rb.useGravity = false;
         _rb.linearDamping = DragDamping;
         _rb.angularDamping = DragDamping;
         _rb.interpolation = RigidbodyInterpolation.Interpolate;
         _rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
+        _rb.constraints = RigidbodyConstraints.FreezeRotation;
+        _rb.linearVelocity = Vector3.zero;
+        _rb.angularVelocity = Vector3.zero;
         _dragTarget = transform.position;
 
         _isDragging = true;
         State = PartState.Dragging;
+        WorkshopPartRegistry.Instance?.NotifyStateChanged(this);
 
-        _highlighter?.ShowCompatible(PartData);
+        if (IsBarrel)
+        {
+            Vector3 pos = _slotAnchorSet ? _slotPosition
+                : WorkshopSlotCalculator.GetSlotFloorCenter(Slot);
+            bool occupied = WorkshopPartRegistry.Instance?.GetAssembledBarrel() != null;
+            _highlighter?.ShowBarrelSlot(pos, occupied);
+        }
+        else
+        {
+            _highlighter?.ShowCompatible(PartData);
+        }
     }
 
     private void HandleMouseUp()
     {
         _isDragging = false;
         _highlighter?.HideAll();
+        ClearPreviewAndThreat();
+        IgnoreBarrelCollision(false);
 
-        // 恢复物理参数
         _rb.useGravity = true;
         _rb.linearDamping = _originalDrag;
         _rb.angularDamping = _originalAngularDrag;
         _rb.interpolation = RigidbodyInterpolation.None;
         _rb.collisionDetectionMode = CollisionDetectionMode.Discrete;
+        _rb.constraints = RigidbodyConstraints.None;
 
-        bool inSlot = Slot != null && Slot.Contains(transform.position);
+        bool inSlot = Slot != null && Slot.OverlapsXZ(_col.bounds);
 
+        if (IsBarrel)
+            HandleBarrelRelease(inSlot);
+        else
+            HandlePartRelease(inSlot);
+    }
+
+    // ─── 笔杆松手 ────────────────────────────────────────────────────────────
+
+    private void HandleBarrelRelease(bool inSlot)
+    {
         if (inSlot)
         {
-            if (!TrySnap())
+            // 改装台只能有一个笔杆：已有则回弹到拖起位置
+            var existing = WorkshopPartRegistry.Instance?.GetAssembledBarrel();
+            if (existing != null && existing != this)
             {
-                if (_stateBeforeDrag == PartState.Assembled
-                    && _originalSocket != null
-                    && _originalSocket.CanAccept(PartData))
-                {
-                    SnapToSocket(_originalSocket);
-                }
-                else
-                {
-                    // 无可用 socket → 恢复物理，抽屉墙壁围住
-                    State = PartState.Loose;
-                }
+                StartCoroutine(AnimateReturnToStart());
+                return;
             }
+
+            StartCoroutine(AnimateBarrelSnap());
         }
         else
         {
-            // Slot 外 → 恢复物理，抽屉碰撞体自然阻挡
+            foreach (var child in GetComponentsInChildren<WorkshopPart>())
+            {
+                if (child != this && child.State == PartState.Assembled)
+                    child.Eject(transform.position);
+            }
             State = PartState.Loose;
-            _linkedInstance = null;
-            transform.SetParent(null);
+            WorkshopPartRegistry.Instance?.NotifyStateChanged(this);
         }
-
-        _originalSocket = null;
     }
 
-    // ─── 核心逻辑 ────────────────────────────────────────────────────────────
-
-    private bool TrySnap()
+    private IEnumerator AnimateBarrelSnap()
     {
-        if (TargetAssembly == null) return false;
+        if (!_slotAnchorSet && Slot != null)
+            WorkshopSlotCalculator.PlaceBarrelOnSlot(this, Slot);
+
+        State = PartState.Snapping;
+        WorkshopPartRegistry.Instance?.NotifyStateChanged(this);
+        _rb.isKinematic = true;
+
+        // 平滑飞入
+        Vector3 startPos = transform.position;
+        Quaternion startRot = transform.rotation;
+        for (float t = 0f; t < 1f; t += Time.deltaTime / SnapDuration)
+        {
+            float ease = EaseOutCubic(Mathf.Clamp01(t));
+            transform.position = Vector3.Lerp(startPos, _slotPosition, ease);
+            transform.rotation = Quaternion.Slerp(startRot, _slotRotation, ease);
+            yield return null;
+        }
+        transform.SetPositionAndRotation(_slotPosition, _slotRotation);
+        _rb.position = _slotPosition;
+        _rb.rotation = _slotRotation;
+
+        // 弹跳缩放
+        yield return AnimateBounce();
+
+        State = PartState.Assembled;
+        if (_col != null) _col.enabled = true;
+        WorkshopPartRegistry.Instance?.NotifyStateChanged(this);
+        PlaySound(SnapSound);
+    }
+
+    // ─── 零件松手 ─────────────────────────────────────────────────────────────
+
+    private void HandlePartRelease(bool inSlot)
+    {
+        if (inSlot && TrySnapToSocket())
+            return;
+
+        // 无效放置：在改装区内但不在 socket 范围 → 抖动反馈
+        if (inSlot)
+        {
+            StartCoroutine(AnimateInvalidShake());
+            return;
+        }
+
+        State = PartState.Loose;
+        transform.SetParent(null);
+        WorkshopPartRegistry.Instance?.NotifyStateChanged(this);
+    }
+
+    private bool TrySnapToSocket()
+    {
+        var barrel = WorkshopPartRegistry.Instance?.GetAssembledBarrel();
+        if (barrel == null) return false;
+
+        PartSocket best = null;
+        float bestDist = SnapDistance;
+        WorkshopPart occupant = null;
+
+        foreach (var socket in barrel.GetComponentsInChildren<PartSocket>())
+        {
+            if (socket.SocketType != PartData.PlugsInto) continue;
+            float dist = Vector3.Distance(
+                _col.ClosestPoint(socket.transform.position),
+                socket.transform.position);
+            if (dist >= bestDist) continue;
+
+            bestDist = dist;
+            best = socket;
+            occupant = socket.GetComponentInChildren<WorkshopPart>();
+        }
+
+        if (best == null) return false;
+
+        // 替换：旧零件平滑移到新零件的起始位置（交换位置）
+        if (occupant != null && occupant != this)
+        {
+            Vector3 swapTarget = _dragStartPosition;
+            Quaternion swapRot = _dragStartRotation;
+            StartCoroutine(AnimateSwapOut(occupant, swapTarget, swapRot));
+        }
+
+        StartCoroutine(AnimateSnapToSocket(best));
+        return true;
+    }
+
+    private IEnumerator AnimateSnapToSocket(PartSocket socket)
+    {
+        State = PartState.Snapping;
+        _rb.isKinematic = true;
+
+        // 平滑飞入
+        Vector3 startPos = transform.position;
+        Quaternion startRot = transform.rotation;
+        Vector3 targetPos = socket.transform.position;
+        Quaternion targetRot = socket.transform.rotation;
+
+        for (float t = 0f; t < 1f; t += Time.deltaTime / SnapDuration)
+        {
+            float ease = EaseOutCubic(Mathf.Clamp01(t));
+            transform.position = Vector3.Lerp(startPos, targetPos, ease);
+            transform.rotation = Quaternion.Slerp(startRot, targetRot, ease);
+            yield return null;
+        }
+
+        transform.SetParent(socket.transform);
+        transform.localPosition = Vector3.zero;
+        transform.localRotation = Quaternion.identity;
+
+        // 弹跳缩放
+        yield return AnimateBounce();
+
+        SetAssembled(isRoot: false);
+        PlaySound(SnapSound);
+    }
+
+    // ─── 磁吸 + 预览 ─────────────────────────────────────────────────────────
+
+    /// <summary>查找当前最近的兼容 socket</summary>
+    private PartSocket FindNearestSocket()
+    {
+        var barrel = WorkshopPartRegistry.Instance?.GetAssembledBarrel();
+        if (barrel == null || PartData == null) return null;
 
         PartSocket best = null;
         float bestDist = SnapDistance;
 
-        foreach (var socket in TargetAssembly.GetComponentsInChildren<PartSocket>())
+        foreach (var socket in barrel.GetComponentsInChildren<PartSocket>())
         {
-            if (!socket.CanAccept(PartData)) continue;
-            float dist = Vector3.Distance(transform.position, socket.transform.position);
+            if (socket.SocketType != PartData.PlugsInto) continue;
+            float dist = Vector3.Distance(
+                _col.ClosestPoint(socket.transform.position),
+                socket.transform.position);
             if (dist < bestDist)
             {
                 bestDist = dist;
@@ -243,63 +438,229 @@ public class WorkshopPart : MonoBehaviour
             }
         }
 
-        if (best == null) return false;
-
-        SnapToSocket(best);
-        return true;
+        return best;
     }
 
-    private void SnapToSocket(PartSocket socket)
+    /// <summary>在 socket 位置显示预览 + 暗示旧零件即将被替换</summary>
+    private void UpdatePreview(PartSocket socket)
     {
-        if (!TargetAssembly.AddPart(PartData, socket))
+        // socket 没变，不处理
+        if (socket == _nearestSocket) return;
+
+        // 清理旧状态
+        ClearPreviewAndThreat();
+        _nearestSocket = socket;
+
+        if (socket == null || PartData == null) return;
+
+        // 预览影子
+        if (PartData.VisualPrefab != null)
         {
-            Debug.LogWarning($"WorkshopPart: AddPart 失败，socket={socket.SocketType}");
-            return;
-        }
+            _preview = Instantiate(PartData.VisualPrefab, socket.transform);
+            _preview.transform.localPosition = Vector3.zero;
+            _preview.transform.localRotation = Quaternion.identity;
 
-        _linkedInstance = socket.OccupiedBy;
-        if (_linkedInstance?.GameObject != null)
-            _linkedInstance.GameObject.SetActive(false);
-
-        transform.SetParent(socket.transform);
-        transform.localPosition = Vector3.zero;
-        transform.localRotation = Quaternion.identity;
-
-        _rb.collisionDetectionMode = CollisionDetectionMode.Discrete;
-        _rb.isKinematic = true;
-        State = PartState.Assembled;
-    }
-
-    private void DetachFromPen()
-    {
-        if (TargetAssembly == null) return;
-
-        PenPartInstance target = null;
-        bool linkedStillInAssembly = false;
-        if (_linkedInstance != null)
-            foreach (var p in TargetAssembly.Parts)
-                if (p == _linkedInstance) { linkedStillInAssembly = true; break; }
-
-        if (linkedStillInAssembly)
-        {
-            target = _linkedInstance;
-        }
-        else
-        {
-            foreach (var p in TargetAssembly.Parts)
+            foreach (var r in _preview.GetComponentsInChildren<Renderer>())
             {
-                if (p.Data == PartData) { target = p; break; }
+                foreach (var mat in r.materials)
+                {
+                    mat.color = new Color(mat.color.r, mat.color.g, mat.color.b, 0.3f);
+                    mat.SetFloat("_Surface", 1);
+                    mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                    mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                    mat.renderQueue = 3000;
+                }
+            }
+            foreach (var c in _preview.GetComponentsInChildren<Collider>())
+                c.enabled = false;
+        }
+
+        // 替换暗示：旧零件缩小 + 半透明
+        var occupant = socket.GetComponentInChildren<WorkshopPart>();
+        if (occupant != null && occupant != this)
+        {
+            _threattenedOccupant = occupant;
+            _threattenedOriginalScale = occupant.transform.localScale;
+            occupant.transform.localScale = _threattenedOriginalScale * 0.85f;
+            SetRendererAlpha(occupant, 0.5f);
+        }
+    }
+
+    private void ClearPreviewAndThreat()
+    {
+        if (_preview != null)
+        {
+            Destroy(_preview);
+            _preview = null;
+        }
+
+        // 恢复被暗示替换的旧零件
+        if (_threattenedOccupant != null)
+        {
+            _threattenedOccupant.transform.localScale = _threattenedOriginalScale;
+            SetRendererAlpha(_threattenedOccupant, 1f);
+            _threattenedOccupant = null;
+        }
+
+        _nearestSocket = null;
+    }
+
+    private static void SetRendererAlpha(WorkshopPart wp, float alpha)
+    {
+        foreach (var r in wp.GetComponentsInChildren<Renderer>())
+        {
+            foreach (var mat in r.materials)
+            {
+                var c = mat.color;
+                mat.color = new Color(c.r, c.g, c.b, alpha);
+                if (alpha < 1f)
+                {
+                    mat.SetFloat("_Surface", 1);
+                    mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                    mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                    mat.renderQueue = 3000;
+                }
+                else
+                {
+                    mat.SetFloat("_Surface", 0);
+                    mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.One);
+                    mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.Zero);
+                    mat.renderQueue = -1;
+                }
             }
         }
+    }
 
-        if (target != null)
+    // ─── 动画工具 ─────────────────────────────────────────────────────────────
+
+    /// <summary>吸附完成后的弹跳缩放（视觉反馈"咔嗒到位"）</summary>
+    private IEnumerator AnimateBounce()
+    {
+        Vector3 originalScale = transform.localScale;
+        Vector3 bounceUp = originalScale * BounceScale;
+
+        // 放大
+        for (float t = 0f; t < 1f; t += Time.deltaTime / (BounceDuration * 0.5f))
         {
-            TargetAssembly.DetachPart(target);
-            if (target.GameObject != null)
-                Destroy(target.GameObject);
+            transform.localScale = Vector3.Lerp(originalScale, bounceUp, t);
+            yield return null;
+        }
+        // 缩回
+        for (float t = 0f; t < 1f; t += Time.deltaTime / (BounceDuration * 0.5f))
+        {
+            transform.localScale = Vector3.Lerp(bounceUp, originalScale, t);
+            yield return null;
+        }
+        transform.localScale = originalScale;
+    }
+
+    /// <summary>无效放置时的抖动反馈</summary>
+    private IEnumerator AnimateInvalidShake()
+    {
+        PlaySound(InvalidSound);
+        State = PartState.Snapping; // 暂时不可交互
+        _rb.isKinematic = true;
+
+        Vector3 origin = transform.position;
+        float elapsed = 0f;
+        while (elapsed < InvalidShakeDuration)
+        {
+            elapsed += Time.deltaTime;
+            // 衰减抖动
+            float decay = 1f - elapsed / InvalidShakeDuration;
+            float x = Random.Range(-1f, 1f) * InvalidShakeIntensity * decay;
+            float z = Random.Range(-1f, 1f) * InvalidShakeIntensity * decay;
+            transform.position = origin + new Vector3(x, 0, z);
+            yield return null;
+        }
+        transform.position = origin;
+
+        // 抖动结束后变 Loose
+        SetLoose();
+    }
+
+    /// <summary>替换时旧零件平滑飞到指定位置后变 Loose</summary>
+    private IEnumerator AnimateSwapOut(WorkshopPart oldPart, Vector3 targetPos, Quaternion targetRot)
+    {
+        oldPart.transform.SetParent(null);
+        var rb = oldPart.GetComponent<Rigidbody>();
+        if (rb != null) rb.isKinematic = true;
+
+        // 临时设为 Snapping 防止被交互
+        oldPart.State = PartState.Snapping;
+
+        Vector3 startPos = oldPart.transform.position;
+        Quaternion startRot = oldPart.transform.rotation;
+
+        for (float t = 0f; t < 1f; t += Time.deltaTime / SnapDuration)
+        {
+            float ease = EaseOutCubic(Mathf.Clamp01(t));
+            oldPart.transform.position = Vector3.Lerp(startPos, targetPos, ease);
+            oldPart.transform.rotation = Quaternion.Slerp(startRot, targetRot, ease);
+            yield return null;
         }
 
-        _linkedInstance = null;
-        transform.SetParent(null);
+        oldPart.transform.SetPositionAndRotation(targetPos, targetRot);
+        oldPart.SetLoose();
+        PlaySound(EjectSound);
+    }
+
+    /// <summary>笔杆被拒绝时平滑飞回拖起位置</summary>
+    private IEnumerator AnimateReturnToStart()
+    {
+        PlaySound(InvalidSound);
+        State = PartState.Snapping;
+        _rb.isKinematic = true;
+
+        Vector3 startPos = transform.position;
+        Quaternion startRot = transform.rotation;
+
+        for (float t = 0f; t < 1f; t += Time.deltaTime / SnapDuration)
+        {
+            float ease = EaseOutCubic(Mathf.Clamp01(t));
+            transform.position = Vector3.Lerp(startPos, _dragStartPosition, ease);
+            transform.rotation = Quaternion.Slerp(startRot, _dragStartRotation, ease);
+            yield return null;
+        }
+
+        transform.SetPositionAndRotation(_dragStartPosition, _dragStartRotation);
+        SetLoose();
+    }
+
+    /// <summary>拖拽中忽略/恢复与笔杆的碰撞</summary>
+    private void IgnoreBarrelCollision(bool ignore)
+    {
+        if (IsBarrel || _col == null) return;
+
+        var barrel = WorkshopPartRegistry.Instance?.GetAssembledBarrel();
+        if (barrel == null) return;
+
+        var barrelCol = barrel.GetComponent<Collider>();
+        if (barrelCol == null) return;
+
+        if (ignore)
+        {
+            _ignoredCollider = barrelCol;
+            Physics.IgnoreCollision(_col, barrelCol, true);
+        }
+        else if (_ignoredCollider != null)
+        {
+            Physics.IgnoreCollision(_col, _ignoredCollider, false);
+            _ignoredCollider = null;
+        }
+    }
+
+    private static float EaseOutCubic(float t) => 1f - Mathf.Pow(1f - t, 3f);
+
+    private void PlaySound(AudioClip clip)
+    {
+        if (clip == null) return;
+        if (_audio == null)
+        {
+            _audio = gameObject.AddComponent<AudioSource>();
+            _audio.spatialBlend = 1f;
+            _audio.playOnAwake = false;
+        }
+        _audio.PlayOneShot(clip);
     }
 }
