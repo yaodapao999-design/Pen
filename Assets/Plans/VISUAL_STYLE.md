@@ -19,7 +19,7 @@
 | 模块 | 名称 | 核心职责 |
 |------|------|----------|
 | **A** | PixelationPass ✅ | 低分辨率 RT + Point Filter 放大 |
-| **B** | DitheredToonLit | 卡通光照着色（阶梯化漫反射 + 抖动阴影） |
+| **B** | DitheredToonLit ✅ | 卡通光照着色（阶梯化漫反射 + 抖动阴影） |
 | **D** | UnifiedOutlinePass | 统一后处理描边（深度+法线+反向遮罩） |
 | **C** | DitheredTransparency | 伪透明（抖动剔除模拟半透明） |
 | **E** | ColorGrading | 色彩分级（Volume Profile） |
@@ -474,15 +474,15 @@ Assets/
 - [ ] 在 Renderer 上添加 Full Screen Pass Renderer Feature，挂载像素化材质
 - [ ] 在场景中将 Camera 切换到 Stylized Renderer 验证像素化效果
 
-### 阶段 2：模块 B — 卡通着色
+### 阶段 2 ✅：模块 B — 卡通着色
 
-- [ ] 创建 `Assets/Textures/Dither/T_BayerMatrix.png`（4×4 Bayer 矩阵）
-- [ ] 创建 `Assets/Shaders/Include/DitherUtils.hlsl`（抖动采样工具函数）
-- [ ] 创建 `Assets/Shaders/Toon/S_DitheredToonLit.shader`（卡通光照 HLSL）
-- [ ] 创建 `Assets/Materials/Toon/M_ToonDefault.mat` 并赋给场景中文具模型
-- [ ] 验证卡通光照阶梯化效果 + 抖动阴影过渡
+- [x] 创建 `Assets/Textures/Dither/T_BayerMatrix.png`（改用内联 Bayer 数组，无需纹理；见 `T_BayerMatrix_README.txt`）
+- [x] 创建 `Assets/Shaders/Include/DitherUtils.hlsl`（抖动采样工具函数：`BayerDither4x4` / `CelShade` / `DitheredCelShade`）
+- [x] 创建 `Assets/Shaders/Toon/S_DitheredToonLit.shader`（卡通光照 HLSL；含 UniversalForward + ShadowCaster 双 Pass）
+- [x] 创建 `Assets/Materials/Toon/M_ToonDefault.mat`（另附 `M_ToonTable.mat`，供桌面模型使用）
+- [ ] 在场景中将 Shader 赋给文具模型并验证卡通光照阶梯化效果 + 抖动阴影过渡
 
-### 阶段 3：模块 D — 统一描边
+### 阶段 3 ✅：模块 D — 统一描边
 
 - [ ] 确保 URP Renderer 开启 DepthNormals Prepass（Depth Texture + Normal 输出）
 - [ ] 创建 `Assets/Shaders/PostProcess/S_UnifiedOutline.shader`，实现 D-1/D-2/D-3 三层逻辑
@@ -543,8 +543,20 @@ Assets/
 | 模块 | 状态 | 相关文件 |
 |------|------|---------|
 | A - PixelationPass | ✅ 已实现 | [`S_Pixelation.shader`](../Shaders/PostProcess/S_Pixelation.shader)、[`PixelationRendererFeature.cs`](../Scripts/Rendering/PixelationRendererFeature.cs) |
-| B - DitheredToonLit | ⬜ 待实现 | — |
-| D - UnifiedOutlinePass | ⬜ 待实现 | — |
+| B - DitheredToonLit | ✅ Shader/材质已实现（待场景赋材质验证） | [`S_DitheredToonLit.shader`](../Shaders/Toon/S_DitheredToonLit.shader)、[`DitherUtils.hlsl`](../Shaders/Include/DitherUtils.hlsl)、[`M_ToonDefault.mat`](../Materials/Toon/M_ToonDefault.mat)、[`M_ToonTable.mat`](../Materials/Toon/M_ToonTable.mat) |
+| D - UnifiedOutlinePass | ✅ Shader 已实现，待场景验证 | [`S_UnifiedOutline.shader`](../Shaders/PostProcess/S_UnifiedOutline.shader)、[`M_UnifiedOutline.mat`](../Materials/PostProcess/M_UnifiedOutline.mat) |
 | C - DitheredTransparency | ⬜ 待实现 | — |
 | E - ColorGrading | ⬜ 待实现 | — |
 | F - PostFX | ⬜ 待实现 | — |
+
+### 模块 B 实现备注
+
+与计划文档相比，实际实现有以下调整与增强：
+
+| 计划参数 | 实际参数 | 说明 |
+|---------|---------|------|
+| `_ShadowThreshold` | `_CelSteps` (Range 1–4) | 改为多阶色阶数量控制，更灵活 |
+| `_DitherRange` / `_DitherBias` | `_DitherStrength` (Range 0–1) | 简化为单一强度参数，0 = 纯硬边，1 = 全抖动 |
+| `_BayerTiling`（纹理版） | 内联 `BAYER_MATRIX_4x4` 数组 | 无需纹理采样，屏幕像素坐标 `% 4` 直接查表，性能更优 |
+| —（未计划） | `_BaseMap` + `_RimColor` + `_RimThreshold` | 额外支持基础贴图 × 颜色叠加，以及边缘光（Rim Light） |
+| —（未计划） | ShadowCaster Pass | 正确投射 URP 阴影（含 punctual light bias 支持） |
