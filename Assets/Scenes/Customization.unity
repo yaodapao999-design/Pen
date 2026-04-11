@@ -917,7 +917,7 @@ MonoBehaviour:
   HoverColorMin: {r: 0.05, g: 0.05, b: 0.05, a: 1}
   HoverColorMax: {r: 0.3, g: 0.3, b: 0.3, a: 1}
   HoverPulseSpeed: 3
-  BarrelTransparentAlpha: 0.3
+  BarrelTransparentAlpha: 0.15
 --- !u!114 &651686828
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1731,7 +1731,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1e67420714fb442669782675ae43afde, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PenEntity
-  baseForce: 10
+  baseForce: 20
   stopVelocityThreshold: 0.05
   stopAngularThreshold: 0.05
   stopCheckDelay: 0.5

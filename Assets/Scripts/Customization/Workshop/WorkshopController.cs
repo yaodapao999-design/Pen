@@ -151,8 +151,10 @@ public class WorkshopController : MonoBehaviour
             ClearHover();
             _hoveredPart = target;
 
-            // 悬停到非笔杆的已装配零件 → 笔杆变半透明，露出内部
-            if (_hoveredPart != null && !_hoveredPart.IsBarrel
+            // 悬停到笔芯（内嵌在笔杆内部）→ 只有笔杆变半透明
+            if (_hoveredPart != null
+                && _hoveredPart.PartData != null
+                && _hoveredPart.PartData.Category == PartType.Refill
                 && _hoveredPart.State == WorkshopPart.PartState.Assembled)
             {
                 var barrel = Registry?.GetAssembledBarrel();
