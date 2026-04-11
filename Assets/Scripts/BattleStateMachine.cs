@@ -7,11 +7,11 @@ public class BattleStateMachine : MonoBehaviour
 
     private IEntityState currentState;
     private BattleContext ctx;
+
     private void Start()
     {
         ctx = new BattleContext(pen);
         ctx.enemyPen = enemyPen;
-
         ChangeState(new IdleState(this, ctx));
     }
 

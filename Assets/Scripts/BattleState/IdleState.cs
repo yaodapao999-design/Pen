@@ -40,7 +40,11 @@ public class IdleState : IEntityState
     private void TryStartDrag(Vector2 screenPos)
     {
         Ray ray = Camera.main.ScreenPointToRay(screenPos);
-        if (!ctx.pen.penCollider.Raycast(ray, out RaycastHit hit, Mathf.Infinity))
+
+        // 检测所有 Tag 为 Pen 的 Collider（包括复合碰撞体的子部件）
+        if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity))
+            return;
+        if (!hit.collider.transform.IsChildOf(ctx.pen.transform) && hit.collider.transform != ctx.pen.transform)
             return;
 
         isDragging = true;
