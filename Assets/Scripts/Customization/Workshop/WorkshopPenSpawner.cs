@@ -9,10 +9,19 @@ using UnityEngine;
 public class WorkshopPenSpawner : MonoBehaviour
 {
     [Header("生成配置")]
-    public PenPartData[] AvailableParts;
+    [Tooltip("可在 Inspector 填初始零件；GameManager 进 Workshop 前可用 SetAvailableParts 覆盖")]
+    public List<PenPartData> AvailableParts = new List<PenPartData>();
     public BoxCollider SpawnArea;
     public WorkshopSlot WorkshopSlot;
 
+    /// <summary>由 GameManager 在进入 Workshop 前注入玩家库存（覆盖当前列表）</summary>
+    public void SetAvailableParts(System.Collections.Generic.IEnumerable<PenPartData> parts)
+    {
+        AvailableParts.Clear();
+        if (parts == null) return;
+        foreach (var p in parts)
+            if (p != null) AvailableParts.Add(p);
+    }
 
     public void SpawnParts()
     {

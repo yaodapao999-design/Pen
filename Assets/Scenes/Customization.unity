@@ -1731,7 +1731,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1e67420714fb442669782675ae43afde, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PenEntity
-  baseForce: 20
+  baseForce: 15
   stopVelocityThreshold: 0.05
   stopAngularThreshold: 0.05
   stopCheckDelay: 0.5

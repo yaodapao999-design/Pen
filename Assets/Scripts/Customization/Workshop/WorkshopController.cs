@@ -20,12 +20,15 @@ public class WorkshopController : MonoBehaviour
 {
     [Header("镜头")]
     public CinemachineCamera DrawerVCam;
-    public int DrawerVCamPriority = 20;
 
     [Header("抽屉")]
-    public Transform DrawerTransform;
-    public float DrawerOpenOffset = 0.3f;
-    public float DrawerOpenDuration = 0.5f;
+    public DrawerAnimator DrawerAnim;
+
+    [Header("过渡")]
+    [Tooltip("退出 Workshop 时，重建战斗视图后解冻物理前的等待时间，用于等相机混合基本到位")]
+    [SerializeField] private float _exitSettleDelay = 0.1f;
+    [Tooltip("进入 Workshop 时，从切换开始到隐藏战斗双方笔的延迟：给相机过渡留够时间，避免笔在玩家视野里凭空消失")]
+    [SerializeField] private float _hidePensDelay = 2f;
 
     [Header("改装台")]
     public WorkshopSlot WorkshopSlot;
@@ -35,20 +38,15 @@ public class WorkshopController : MonoBehaviour
     public PenPartData CurrentBarrel;
     public PenPartData[] CurrentParts;
 
-    [Header("退出按钮")]
-    public RectTransform ExitButton;
-    public float ShakeIntensity = 10f;
-    public float ShakeDuration = 0.4f;
-
     [Header("引用")]
     public WorkshopPenSpawner PenSpawner;
+    [Tooltip("战斗状态机，进改装时隐藏双方笔，出改装时由 BattlePhase 重新激活并归位")]
+    public BattleStateMachine BattleSM;
 
     private CinemachineBrain _brain;
     private bool _inDrawer;
     private Rigidbody _penRb;
-    private float _drawerClosedZ;
     private bool _isTransitioning;
-    private bool _isShaking;
     private Vector3 _penOriginalPosition;
     private Quaternion _penOriginalRotation;
 
@@ -78,7 +76,6 @@ public class WorkshopController : MonoBehaviour
         if (DrawerVCam != null) DrawerVCam.Priority = 0;
         _brain = Camera.main.GetComponent<CinemachineBrain>();
         if (CurrentPen != null) _penRb = CurrentPen.GetComponent<Rigidbody>();
-        if (DrawerTransform != null) _drawerClosedZ = DrawerTransform.localPosition.z;
 
         if (CurrentBarrel != null && CurrentPen != null)
         {
@@ -238,7 +235,7 @@ public class WorkshopController : MonoBehaviour
         {
             if (Registry == null || !Registry.HasAssembledBarrel())
             {
-                if (ExitButton != null) StartCoroutine(ShakeButton());
+                // 拒绝反馈由发起请求的 UI（PhaseButton）播放，这里只负责拦截
                 return;
             }
             FinishWorkshop();
@@ -249,10 +246,17 @@ public class WorkshopController : MonoBehaviour
         }
     }
 
-    public void EnterWorkshop()
+    public void EnterWorkshop() => StartCoroutine(EnterWorkshopRoutine());
+    public void FinishWorkshop() => StartCoroutine(FinishWorkshopRoutine());
+
+    /// <summary>公开协程：供 GameManager 的 WorkshopPhase.Enter yield 等待</summary>
+    public IEnumerator EnterWorkshopRoutine()
     {
-        if (_inDrawer || _isTransitioning) return;
+        if (_inDrawer || _isTransitioning) yield break;
         _inDrawer = true;
+
+        // 防御：上一阶段（如 Shop）可能让抽屉处于非关闭状态，先瞬时归位
+        if (DrawerAnim != null) DrawerAnim.SnapClosed();
 
         if (_penRb != null)
         {
@@ -261,22 +265,24 @@ public class WorkshopController : MonoBehaviour
             _penRb.isKinematic = true;
         }
 
-        StartCoroutine(TransitionToDrawer());
+        yield return TransitionToDrawer();
     }
 
-    public void FinishWorkshop()
+    /// <summary>公开协程：供 GameManager 的 WorkshopPhase.Exit yield 等待。
+    /// 不做笔杆校验（那个是阶段级的前置约束，由 WorkshopPhase.CanExit 负责）。</summary>
+    public IEnumerator FinishWorkshopRoutine()
     {
-        if (!_inDrawer || _isTransitioning) return;
-        StartCoroutine(TransitionFromDrawer());
+        if (!_inDrawer || _isTransitioning) yield break;
+        yield return TransitionFromDrawer();
     }
+
 
     // ─── 进入改装 ─────────────────────────────────────────────────────────────
 
     private IEnumerator TransitionToDrawer()
     {
         _isTransitioning = true;
-        if (DrawerVCam != null) DrawerVCam.Priority = DrawerVCamPriority;
-
+        // 镜头优先级已由 GameManager 在 ChangePhase 开始时抬起，此处不再 set
         yield return new WaitForSeconds(GetBlendDuration());
 
         _penOriginalPosition = CurrentPen.transform.position;
@@ -285,13 +291,17 @@ public class WorkshopController : MonoBehaviour
         CurrentPen.ClearBattleView();
         SetPenEntityVisible(false);
 
+        // 无书可推，进改装延迟隐藏双方笔；让相机过渡期间玩家仍能看到笔在桌上，不突兀
+        // 位置已由 BattlePhase.Exit 快照
+        if (BattleSM != null) StartCoroutine(HidePensAfterDelay(_hidePensDelay));
+
         CreateWorkshopView();
         if (PenSpawner != null) PenSpawner.SpawnParts();
 
         var frozenParts = FreezeLooseParts();
 
-        if (DrawerTransform != null)
-            yield return AnimateDrawer(_drawerClosedZ + DrawerOpenOffset, frozenParts);
+        if (DrawerAnim != null)
+            yield return AnimateDrawerAndFollow(open: true, frozenParts);
 
         UnfreezeAll(frozenParts);
 
@@ -305,18 +315,27 @@ public class WorkshopController : MonoBehaviour
 
     // ─── 退出改装 ─────────────────────────────────────────────────────────────
 
+    private IEnumerator HidePensAfterDelay(float delay)
+    {
+        yield return new WaitForSeconds(Mathf.Max(0f, delay));
+        if (BattleSM != null) BattleSM.SetPensActive(false);
+    }
+
     private IEnumerator TransitionFromDrawer()
     {
         _isTransitioning = true;
 
         var frozenParts = FreezeLooseParts();
 
-        if (DrawerTransform != null)
-            yield return AnimateDrawer(_drawerClosedZ, frozenParts);
+        if (DrawerAnim != null)
+            yield return AnimateDrawerAndFollow(open: false, frozenParts);
 
         // 抽屉关闭后：写回数据 → 销毁容器 → 重建战斗视图
         WriteBackData();
         DestroyAllWorkshopParts();
+
+        // 在 BuildBattleView 前重新激活笔根节点，否则新建的战斗视图挂在 inactive 父物体下不可见
+        if (BattleSM != null) BattleSM.SetPensActive(true);
 
         SetPenEntityVisible(true);
         CurrentPen.transform.SetPositionAndRotation(_penOriginalPosition, _penOriginalRotation);
@@ -328,10 +347,9 @@ public class WorkshopController : MonoBehaviour
 
         CurrentPen.BuildBattleView();
 
-        if (DrawerVCam != null) DrawerVCam.Priority = 0;
-
+        // 镜头优先级由 GameManager 调度，这里不改
         yield return null;
-        yield return new WaitForSeconds(GetBlendDuration());
+        yield return new WaitForSeconds(_exitSettleDelay);
 
         if (_penRb != null) _penRb.isKinematic = false;
 
@@ -457,10 +475,13 @@ public class WorkshopController : MonoBehaviour
         }
     }
 
-    private IEnumerator AnimateDrawer(float targetZ, List<(Transform t, Vector3 start)> frozenParts)
+    /// <summary>
+    /// 抽屉开/关动画由 DrawerAnimator 驱动；本协程并行跑，按抽屉世界位移带动零件跟随。
+    /// </summary>
+    private IEnumerator AnimateDrawerAndFollow(bool open, List<(Transform t, Vector3 start)> frozenParts)
     {
-        float startZ = DrawerTransform.localPosition.z;
-        Vector3 drawerWorldStart = DrawerTransform.position;
+        var drawerT = DrawerAnim.DrawerTransform;
+        Vector3 drawerWorldStart = drawerT.position;
 
         // 收集根级 Assembled 容器（子物体通过层级自动跟随）
         var assembledRoots = new List<(Transform t, Vector3 start)>();
@@ -473,24 +494,15 @@ public class WorkshopController : MonoBehaviour
             }
         }
 
-        float t = 0f;
-        while (t < 1f)
+        if (open) DrawerAnim.Open(); else DrawerAnim.Close();
+
+        while (DrawerAnim.IsAnimating)
         {
-            t += Time.deltaTime / DrawerOpenDuration;
-            float smooth = Mathf.SmoothStep(0f, 1f, t);
-            DrawerTransform.localPosition = new Vector3(
-                DrawerTransform.localPosition.x,
-                DrawerTransform.localPosition.y,
-                Mathf.Lerp(startZ, targetZ, smooth));
-
-            Vector3 delta = DrawerTransform.position - drawerWorldStart;
-
+            Vector3 delta = drawerT.position - drawerWorldStart;
             foreach (var (tr, s) in assembledRoots)
                 if (tr != null) tr.position = s + delta;
-
             foreach (var (tr, s) in frozenParts)
                 if (tr != null) tr.position = s + delta;
-
             yield return null;
         }
     }
@@ -500,22 +512,4 @@ public class WorkshopController : MonoBehaviour
         return _brain != null ? _brain.DefaultBlend.Time : 1f;
     }
 
-    private IEnumerator ShakeButton()
-    {
-        if (_isShaking) yield break;
-        _isShaking = true;
-
-        var origin = ExitButton.anchoredPosition;
-        float elapsed = 0f;
-        while (elapsed < ShakeDuration)
-        {
-            elapsed += Time.unscaledDeltaTime;
-            ExitButton.anchoredPosition = origin + new Vector2(
-                Random.Range(-ShakeIntensity, ShakeIntensity),
-                Random.Range(-ShakeIntensity, ShakeIntensity));
-            yield return null;
-        }
-        ExitButton.anchoredPosition = origin;
-        _isShaking = false;
-    }
 }
