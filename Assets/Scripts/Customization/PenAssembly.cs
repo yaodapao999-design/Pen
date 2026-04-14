@@ -2,135 +2,142 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 笔的装配管理器：管理所有已装配部件，驱动物理聚合
-/// 挂在 PenEntity 同一个 GameObject 上
+/// 笔的装配管理器
+/// 数据层：始终存在，记录笔杆和零件的装配关系
+/// 战斗视图：仅战斗时存在，从数据构建物理笔实体
+/// 改装期间视图由 WorkshopPart 容器独立管理，PenAssembly 只提供数据读写
 /// </summary>
 public class PenAssembly : MonoBehaviour
 {
-    private readonly List<PenPartInstance> _parts = new();
+    // ─── 数据层（始终存在） ───────────────────────────────────────────────────
+
+    public PenPartData BarrelData { get; private set; }
+
+    [System.Serializable]
+    public struct PartEntry
+    {
+        public PenPartData Data;
+        public SocketType Socket;
+        public PartEntry(PenPartData data, SocketType socket) { Data = data; Socket = socket; }
+    }
+
+    private readonly List<PartEntry> _assembledParts = new();
+    public IReadOnlyList<PartEntry> AssembledParts => _assembledParts;
+
+    /// <summary>设置完整装配数据（Workshop 退出时调用）</summary>
+    public void SetData(PenPartData barrel, List<PartEntry> parts)
+    {
+        BarrelData = barrel;
+        _assembledParts.Clear();
+        _assembledParts.AddRange(parts);
+    }
+
+    /// <summary>初始化数据（游戏启动 / 战斗系统传入）</summary>
+    public void InitData(PenPartData barrel, PenPartData[] parts)
+    {
+        BarrelData = barrel;
+        _assembledParts.Clear();
+        if (parts == null) return;
+        foreach (var p in parts)
+        {
+            if (p != null && p.PlugsInto != SocketType.None)
+                _assembledParts.Add(new PartEntry(p, p.PlugsInto));
+        }
+    }
+
+    // ─── 战斗视图（仅战斗时存在） ────────────────────────────────────────────
+
+    private GameObject _barrelRoot;
+    private readonly List<PenPartInstance> _battleParts = new();
     private PenPhysicsAggregator _aggregator;
     private Rigidbody _rb;
-    private GameObject _barrelRoot;
 
-    public IReadOnlyList<PenPartInstance> Parts => _parts;
-    public PenPartData CurrentBarrelData { get; private set; }
+    public CapsuleCollider BarrelCollider { get; private set; }
+    public IReadOnlyList<PenPartInstance> BattleParts => _battleParts;
 
     private void Awake()
     {
         _rb = GetComponent<Rigidbody>();
     }
 
-    public CapsuleCollider BarrelCollider { get; private set; }
-
-    /// <summary>设置笔杆（实例化 Barrel 预制体，作为所有 Socket 的宿主）</summary>
-    public void SetBarrel(PenPartData barrelData)
+    /// <summary>从数据构建战斗视图（进入战斗时调用）</summary>
+    public void BuildBattleView()
     {
-        if (barrelData.Category != PartType.Barrel)
-        {
-            Debug.LogWarning($"{barrelData.DisplayName} 不是 Barrel 类型");
-            return;
-        }
+        ClearBattleView();
+        if (BarrelData == null || BarrelData.VisualPrefab == null) return;
 
-        if (_barrelRoot != null)
-        {
-            _parts.Clear();
-            Destroy(_barrelRoot);
-        }
-
-        _barrelRoot = Instantiate(barrelData.VisualPrefab, transform);
+        // 笔杆
+        _barrelRoot = Instantiate(BarrelData.VisualPrefab, transform);
         _barrelRoot.transform.localPosition = Vector3.zero;
         _barrelRoot.transform.localRotation = Quaternion.identity;
 
         BarrelCollider = _barrelRoot.GetComponentInChildren<CapsuleCollider>();
         if (BarrelCollider == null)
         {
-            Debug.LogError($"Barrel 预制体 {barrelData.DisplayName} 缺少 CapsuleCollider");
+            Debug.LogError($"Barrel 预制体 {BarrelData.DisplayName} 缺少 CapsuleCollider");
             return;
         }
 
         _aggregator = new PenPhysicsAggregator(_rb, BarrelCollider);
 
-        CurrentBarrelData = barrelData;
+        // 零件
+        foreach (var entry in _assembledParts)
+        {
+            var socket = FindSocket(_barrelRoot, entry.Socket);
+            if (socket == null)
+            {
+                Debug.LogWarning($"找不到 Socket {entry.Socket}，跳过 {entry.Data.DisplayName}");
+                continue;
+            }
+
+            var go = Instantiate(entry.Data.VisualPrefab, socket.transform);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+
+            var instance = new PenPartInstance(entry.Data, go);
+            instance.AttachTo(socket);
+            _battleParts.Add(instance);
+        }
+
         RefreshPhysics();
     }
 
-    /// <summary>从笔杆子物体里自动查找指定类型的 Socket</summary>
-    public PartSocket GetSocket(SocketType type)
+    /// <summary>销毁战斗视图（进入改装时调用）</summary>
+    public void ClearBattleView()
     {
-        if (_barrelRoot == null)
+        _battleParts.Clear();
+        if (_barrelRoot != null)
         {
-            Debug.LogWarning("还没有设置 Barrel，无法查找 Socket");
-            return null;
+            Destroy(_barrelRoot);
+            _barrelRoot = null;
         }
+        BarrelCollider = null;
+        _aggregator = null;
+    }
 
-        foreach (var socket in _barrelRoot.GetComponentsInChildren<PartSocket>())
+    // ─── 物理（战斗用） ──────────────────────────────────────────────────────
+
+    public void RefreshPhysics()
+    {
+        if (_aggregator == null) return;
+        _aggregator.Recalculate(_battleParts);
+    }
+
+    public float GetLaunchMultiplier()
+    {
+        if (_aggregator == null) return 1f;
+        return _aggregator.GetLaunchMultiplier(_battleParts);
+    }
+
+    // ─── 工具 ────────────────────────────────────────────────────────────────
+
+    private static PartSocket FindSocket(GameObject root, SocketType type)
+    {
+        foreach (var socket in root.GetComponentsInChildren<PartSocket>())
         {
             if (socket.SocketType == type && !socket.IsOccupied)
                 return socket;
         }
-
         return null;
     }
-
-    /// <summary>添加部件到指定 socket，并刷新物理</summary>
-    public bool AddPart(PenPartData data, PartSocket socket)
-    {
-        if (!socket.CanAccept(data))
-        {
-            Debug.LogWarning($"Socket {socket.SocketType} 无法接受部件 {data.DisplayName}");
-            return false;
-        }
-
-        var go = Instantiate(data.VisualPrefab, socket.transform);
-        go.transform.localPosition = Vector3.zero;
-        go.transform.localRotation = Quaternion.identity;
-
-        var instance = new PenPartInstance(data, go);
-        instance.AttachTo(socket);
-        _parts.Add(instance);
-
-        RefreshPhysics();
-        return true;
-    }
-
-    /// <summary>移除指定部件，并刷新物理</summary>
-    public void RemovePart(PenPartInstance part)
-    {
-        if (!_parts.Contains(part)) return;
-
-        part.Detach();
-        Destroy(part.GameObject);
-        _parts.Remove(part);
-
-        RefreshPhysics();
-    }
-
-    /// <summary>
-    /// 仅从装配列表中移除部件（不销毁 GameObject），供 Workshop 模式使用。
-    /// 调用方负责处理 GameObject 的生命周期。
-    /// </summary>
-    public void DetachPart(PenPartInstance part)
-    {
-        if (!_parts.Contains(part)) return;
-
-        part.Detach();
-        _parts.Remove(part);
-
-        RefreshPhysics();
-    }
-
-    /// <summary>获取弹射倍率（供 PenEntity.Launch 使用）</summary>
-    public float GetLaunchMultiplier()
-    {
-        if (_aggregator == null) return 1f;
-        return _aggregator.GetLaunchMultiplier(_parts);
-    }
-
-    /// <summary>重新聚合所有部件物理属性并应用</summary>
-    public void RefreshPhysics()
-    {
-        if (_aggregator == null) return;
-        _aggregator.Recalculate(_parts);
-    }
 }
-

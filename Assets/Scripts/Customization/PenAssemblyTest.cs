@@ -42,24 +42,9 @@ public class PenAssemblyTest : MonoBehaviour
 
         if (barrelData != null)
         {
-            _assembly.SetBarrel(barrelData);
-            LogPhysicsState("装配 Barrel 后");
-        }
-
-        foreach (var data in partDatas)
-        {
-            if (data == null) continue;
-
-            var socket = _assembly.GetSocket(data.PlugsInto);
-            if (socket == null)
-            {
-                Debug.LogWarning($"找不到 Socket: {data.PlugsInto}，跳过 {data.DisplayName}");
-                continue;
-            }
-
-            bool success = _assembly.AddPart(data, socket);
-            Debug.Log($"装配 [{data.DisplayName}] 到 [{data.PlugsInto}]: {(success ? "成功" : "失败")}");
-            LogPhysicsState($"装配 {data.DisplayName} 后");
+            _assembly.InitData(barrelData, partDatas);
+            _assembly.BuildBattleView();
+            LogPhysicsState("装配完成后");
         }
     }
 

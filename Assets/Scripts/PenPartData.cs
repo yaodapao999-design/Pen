@@ -17,10 +17,8 @@ public class PenPartData : ScriptableObject
     public Sprite Icon;
 
     [Header("--- Socket 连接点 ---")]
-    // 这个部件插入父级的哪个 socket
+    // 这个部件插入父级的哪个 socket（Barrel 不需要设置）
     public SocketType PlugsInto;
-    // 这个部件自身提供哪些 socket 给子部件连接
-    public SocketType[] ProvidesSocket;
 
     [Header("--- 物理：质量与质心 ---")]
     // 该部件自身质量（kg），Unity 会根据所有子 Collider 位置自动计算质心
@@ -38,4 +36,8 @@ public class PenPartData : ScriptableObject
     [Header("--- 经济 ---")]
     public int BuyPrice;
 
+    [Header("--- 效果 ---")]
+    // 该零件提供的效果列表，每个效果是一个 PenPartEffect SO
+    // 添加新功能只需创建新 Effect SO 并拖进来
+    public PenPartEffect[] Effects;
 }
