@@ -459,7 +459,7 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0, y: 0}
---- !u!84 &283500867
+--- !u!84 &239962812
 RenderTexture:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -4617,7 +4617,7 @@ PrefabInstance:
     - target: {fileID: 8768913672649493680, guid: 728ea0820554cc44189cf570c5e1ec68, type: 3}
       propertyPath: m_TargetTexture
       value: 
-      objectReference: {fileID: 283500867}
+      objectReference: {fileID: 239962812}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -4870,7 +4870,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: -5305885509570978451, guid: ea1c95c774b1a47089dbbf5aab87813e, type: 3}
+  - {fileID: 2100000, guid: 164b19ee0f386e14593c96a376638cbb, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -5070,6 +5070,7 @@ GameObject:
   - component: {fileID: 7743040324106144904}
   - component: {fileID: 2261074547482249728}
   - component: {fileID: 9153165206195351279}
+  - component: {fileID: 9153165206195351280}
   m_Layer: 0
   m_Name: mesh
   m_TagString: Untagged
@@ -5306,7 +5307,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: -5305885509570978451, guid: ea1c95c774b1a47089dbbf5aab87813e, type: 3}
+  - {fileID: 2100000, guid: 164b19ee0f386e14593c96a376638cbb, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -5330,6 +5331,22 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!114 &9153165206195351280
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6144968456009526467}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4bbf9cbec60ae704f8a1d639d413e8e5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp-firstpass::Environment.Instancing.MeshInstancesBehaviour
+  UseSubMesh: 0
+  SubMeshIndex: 0
+  Density: 1
+  InstancingSettings: []
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
