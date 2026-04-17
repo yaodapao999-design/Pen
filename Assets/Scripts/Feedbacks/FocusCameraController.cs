@@ -99,8 +99,7 @@ public class FocusCameraController : MonoBehaviour
         foreach (var pen in initialPens)
             RegisterPen(pen);
 
-        if (focusCamera != null)
-            focusCamera.Priority = activePriority;
+        // 镜头 Priority 由 GameManager 的阶段调度统一管理，这里不再设置
     }
 
     private void LateUpdate()
@@ -173,8 +172,8 @@ public class FocusCameraController : MonoBehaviour
     /// </summary>
     public void SetFocusActive(bool active)
     {
-        if (focusCamera == null) return;
-        focusCamera.Priority = active ? activePriority : inactivePriority;
+        // 保留空实现以兼容外部调用；Priority 调度已交给 GameManager
+        // 聚焦效果现在只通过 FOV Punch 表现（见 FocusOn）
     }
 
     /// <summary>当前仍在追踪的笔数量（只读）</summary>

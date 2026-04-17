@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 1439502887772780752}
   - component: {fileID: 2970822992197402853}
   - component: {fileID: 2882455938107513198}
+  - component: {fileID: 6241679683225239256}
   m_Layer: 0
   m_Name: Main
   m_TagString: Untagged
@@ -66,7 +67,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: bcaeba74ebdafc8479c0e089e4ba2e7f, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -90,6 +91,22 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!114 &6241679683225239256
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 561493839172239382}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4bbf9cbec60ae704f8a1d639d413e8e5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp-firstpass::Environment.Instancing.MeshInstancesBehaviour
+  UseSubMesh: 0
+  SubMeshIndex: 0
+  Density: 1
+  InstancingSettings: []
 --- !u!1 &562282744928668368
 GameObject:
   m_ObjectHideFlags: 0

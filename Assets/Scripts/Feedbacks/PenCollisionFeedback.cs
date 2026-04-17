@@ -19,8 +19,10 @@ public class PenCollisionFeedback : MonoBehaviour
     [SerializeField] private float maxImpactVelocity = 15f;
 
     [Header("碰撞过滤")]
-    [Tooltip("只响应带有此 Tag 的碰撞体（笔对笔碰撞）")]
+    [Tooltip("主过滤 Tag（通常为 Pen），保留兼容")]
     [SerializeField] private string penTag = "Pen";
+    [Tooltip("额外可响应的 Tag 白名单（如 ShopBook）；和 penTag 取并集")]
+    [SerializeField] private string[] additionalTags;
 
     [Header("慢动作配置")]
     [Tooltip("触发慢动作的强度阈值 (0~1)")]
@@ -34,7 +36,7 @@ public class PenCollisionFeedback : MonoBehaviour
     // ─────────────────────────────────────────────────────────────
     private void OnCollisionEnter(Collision collision)
     {
-        if (!collision.gameObject.CompareTag(penTag)) return;
+        if (!IsAcceptedCollider(collision.gameObject)) return;
 
         float impactVelocity = collision.relativeVelocity.magnitude;
         if (impactVelocity < minImpactVelocity) return;
@@ -43,6 +45,18 @@ public class PenCollisionFeedback : MonoBehaviour
         Vector3 contactPoint = collision.contacts[0].point;
 
         TriggerCollisionFeedbacks(intensity, contactPoint);
+    }
+
+    private bool IsAcceptedCollider(GameObject go)
+    {
+        if (!string.IsNullOrEmpty(penTag) && go.CompareTag(penTag)) return true;
+        if (additionalTags == null) return false;
+        for (int i = 0; i < additionalTags.Length; i++)
+        {
+            var t = additionalTags[i];
+            if (!string.IsNullOrEmpty(t) && go.CompareTag(t)) return true;
+        }
+        return false;
     }
 
     /// <summary>

@@ -145,7 +145,7 @@ public class WorkshopPart : MonoBehaviour
 
         if (mouse.leftButton.isPressed)
         {
-            var ray = _cam.ScreenPointToRay(mouse.position.ReadValue());
+            var ray = ScreenHelper.ScreenPointToRay(_cam, mouse.position.ReadValue());
             if (_dragPlane.Raycast(ray, out float enter))
             {
                 Vector3 target = ray.GetPoint(enter) + _dragOffset;
@@ -202,7 +202,7 @@ public class WorkshopPart : MonoBehaviour
         _dragStartRotation = transform.rotation;
 
         _dragPlane = new Plane(Vector3.up, transform.position);
-        var ray = _cam.ScreenPointToRay(Mouse.current.position.ReadValue());
+        var ray = ScreenHelper.ScreenPointToRay(_cam, Mouse.current.position.ReadValue());
         _dragOffset = _dragPlane.Raycast(ray, out float enter)
             ? transform.position - ray.GetPoint(enter)
             : Vector3.zero;
