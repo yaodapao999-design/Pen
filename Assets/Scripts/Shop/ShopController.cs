@@ -136,7 +136,7 @@ public class ShopController : MonoBehaviour
 
         if (!mouse.leftButton.wasPressedThisFrame) return;
 
-        var ray = cam.ScreenPointToRay(mouse.position.ReadValue());
+        var ray = ScreenHelper.ScreenPointToRay(cam, mouse.position.ReadValue());
         ShopPart best = null;
         float bestDist = float.MaxValue;
         foreach (var hit in Physics.RaycastAll(ray))

@@ -96,7 +96,7 @@ public class WorkshopController : MonoBehaviour
         var cam = Camera.main;
         if (cam == null) return;
 
-        var ray = cam.ScreenPointToRay(mouse.position.ReadValue());
+        var ray = ScreenHelper.ScreenPointToRay(cam, mouse.position.ReadValue());
 
         // 射线检测：优先子零件，兜底笔杆
         var target = RaycastBestTarget(ray);

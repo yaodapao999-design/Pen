@@ -1,6 +1,13 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
+/// <summary>
+/// 等待状态：玩家可拖拽笔来蓄力弹射。
+/// <para>
+/// 坐标转换统一通过 <see cref="ScreenHelper"/> 处理，
+/// 兼容 3DPixelCamera 双相机系统与普通单相机场景。
+/// </para>
+/// </summary>
 public class IdleState : IEntityState
 {
     private readonly BattleStateMachine stateMachine;
@@ -15,10 +22,11 @@ public class IdleState : IEntityState
         this.ctx = ctx;
     }
 
+    // ─── 状态生命周期 ──────────────────────────────────────────────────────────
+
     public void Enter()
     {
         isDragging = false;
-        Debug.Log("进入了等待状态，现在可以准备弹射了");
     }
 
     public void Update()
@@ -37,31 +45,46 @@ public class IdleState : IEntityState
         }
     }
 
+    public void Exit() { }
+
+    // ─── 拖拽流程 ──────────────────────────────────────────────────────────────
+
+    /// <summary>尝试在点击位置开始拖拽，仅当点击落在笔的 Viewport 判定范围内才生效。</summary>
     private void TryStartDrag(Vector2 screenPos)
     {
-        Ray ray = Camera.main.ScreenPointToRay(screenPos);
+        CapsuleCollider col = ctx.pen.penCollider;
+        if (col == null) return;
 
-        // 检测所有 Tag 为 Pen 的 Collider（包括复合碰撞体的子部件）
-        if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity))
-            return;
-        if (!hit.collider.transform.IsChildOf(ctx.pen.transform) && hit.collider.transform != ctx.pen.transform)
+        Camera cam = Camera.main;
+        Vector2 clickVP = ScreenHelper.ScreenToViewport(screenPos);
+
+        // 笔中心与笔尖的 Viewport 坐标
+        Vector2 penVP = ScreenHelper.WorldToViewport2D(cam, ctx.pen.rb.worldCenterOfMass);
+        Vector2 tipVP = ScreenHelper.WorldToViewport2D(cam,
+            ctx.pen.rb.worldCenterOfMass + ctx.pen.GetPenAxis() * (col.height / 2f));
+
+        // 命中判定（Viewport 空间）
+        float penHalfLenVP = Vector2.Distance(penVP, tipVP);
+        float clickRadius = Mathf.Max(penHalfLenVP, 0.03f) + 0.03f;
+
+        if (Vector2.Distance(clickVP, penVP) > clickRadius)
             return;
 
+        // 开始拖拽
         isDragging = true;
-        dragStartWorldPos = GetWorldPositionOnPenPlane(screenPos);
+        dragStartWorldPos = ScreenHelper.ScreenToWorldOnPlane(cam, screenPos, ctx.pen.transform.position);
 
-        Vector3 localHitPoint = ctx.pen.transform.InverseTransformPoint(hit.point);
-        float rawOffset = ctx.pen.GetOffsetAlongCapsuleAxis(localHitPoint);
-        float halfHeight = (ctx.pen.penCollider.height / 2f) - ctx.pen.penCollider.radius;
-        ctx.ContactOffset = Mathf.Clamp(rawOffset / halfHeight, -1f, 1f);
-
-        Debug.Log($"点击偏移: {ctx.ContactOffset:F3}（-1=笔尾, 0=中心, 1=笔头）");
+        // 接触偏移（-1 = 笔尾，0 = 中心，1 = 笔头）
+        ctx.ContactOffset = CalculateContactOffset(clickVP, penVP, tipVP, penHalfLenVP);
     }
 
+    /// <summary>拖拽中持续更新弹射方向与力度。</summary>
     private void UpdateDrag(Vector2 screenPos)
     {
-        Vector3 currentWorldPos = GetWorldPositionOnPenPlane(screenPos);
+        Camera cam = Camera.main;
+        Vector3 currentWorldPos = ScreenHelper.ScreenToWorldOnPlane(cam, screenPos, ctx.pen.transform.position);
         Vector3 dragVector = currentWorldPos - dragStartWorldPos;
+        dragVector.y = 0f; // 限制在水平面
 
         if (dragVector.magnitude > ctx.pen.maxDragDistance)
             dragVector = dragVector.normalized * ctx.pen.maxDragDistance;
@@ -70,21 +93,27 @@ public class IdleState : IEntityState
         ctx.LaunchForce = dragVector.magnitude / ctx.pen.maxDragDistance;
     }
 
+    /// <summary>释放鼠标，执行弹射。</summary>
     private void FinishDrag()
     {
         isDragging = false;
-
-        Debug.Log($"弹射！方向: {ctx.LaunchDirection}, 力度: {ctx.LaunchForce:F2}, 偏移: {ctx.ContactOffset:F3}");
         stateMachine.ChangeState(new ActionState(stateMachine, ctx));
     }
 
-    private Vector3 GetWorldPositionOnPenPlane(Vector2 screenPos)
-    {
-        Ray ray = Camera.main.ScreenPointToRay(screenPos);
-        Plane penPlane = new Plane(Vector3.up, ctx.pen.transform.position);
-        penPlane.Raycast(ray, out float distance);
-        return ray.GetPoint(distance);
-    }
+    // ─── 工具 ──────────────────────────────────────────────────────────────────
 
-    public void Exit() => Debug.Log("离开了等待状态");
+    /// <summary>
+    /// 在 Viewport 空间沿笔轴方向计算点击偏移。
+    /// 返回值范围 [-1, 1]，-1 = 笔尾，0 = 中心，1 = 笔头。
+    /// </summary>
+    private static float CalculateContactOffset(Vector2 clickVP, Vector2 penVP, Vector2 tipVP, float penHalfLenVP)
+    {
+        Vector2 axisDir = tipVP - penVP;
+        float axisDirLen = axisDir.magnitude;
+        if (axisDirLen < 0.001f)
+            return 0f;
+
+        float projection = Vector2.Dot(clickVP - penVP, axisDir / axisDirLen);
+        return Mathf.Clamp(projection / Mathf.Max(penHalfLenVP, 0.001f), -1f, 1f);
+    }
 }

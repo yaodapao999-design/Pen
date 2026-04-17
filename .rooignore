@@ -1,0 +1,108 @@
+# ===========================
+# Roo Code Indexing Ignore
+# Unity Project: Pen
+# ===========================
+
+# --- Unity 生成目录 (必须排除) ---
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+MemoryCaptures/
+Recordings/
+
+# --- 二进制资源文件 ---
+*.fbx
+*.FBX
+*.obj
+*.OBJ
+*.3ds
+*.3DS
+*.lxo
+*.LXO
+*.ma
+*.MA
+*.blend
+*.blend1
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.tga
+*.tif
+*.tiff
+*.psd
+*.ico
+*.bmp
+*.svg
+*.webp
+*.exr
+*.hdr
+*.cubemap
+*.wav
+*.mp3
+*.ogg
+*.aif
+*.aiff
+*.mid
+*.midi
+*.dll
+*.exe
+*.so
+*.dylib
+*.a
+*.pdb
+*.mdb
+
+# --- Unity Meta文件 ---
+*.meta
+
+# --- Unity 场景和预制件 (YAML二进制混合,索引价值低) ---
+*.unity
+*.prefab
+*.asset
+*.mat
+*.physicMaterial
+*.flare
+*.controller
+*.overrideController
+*.anim
+*.mask
+*.lighting
+*.giparams
+*.renderTexture
+
+# --- 第三方插件 (减少噪音) ---
+Assets/Plugins/Feel
+Assets/TextMesh Pro/
+Assets/TutorialInfo/
+
+# --- IDE / 编辑器生成文件 ---
+.vs/
+.vscode/
+.idea/
+*.csproj
+*.sln
+*.slnx
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.opendb
+*.VC.db
+
+# --- 系统文件 ---
+.DS_Store
+Thumbs.db
+*.log
+
+# --- 其他 ---
+ServerData/
+*.unitypackage
+crashlytics-build.properties

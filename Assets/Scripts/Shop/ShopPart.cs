@@ -112,7 +112,7 @@ public class ShopPart : MonoBehaviour
         var mouse = Mouse.current;
         if (mouse != null)
         {
-            var ray = _cam.ScreenPointToRay(mouse.position.ReadValue());
+            var ray = ScreenHelper.ScreenPointToRay(_cam, mouse.position.ReadValue());
             _dragOffset = _dragPlane.Raycast(ray, out float enter)
                 ? transform.position - ray.GetPoint(enter)
                 : Vector3.zero;
@@ -142,7 +142,7 @@ public class ShopPart : MonoBehaviour
 
         if (mouse.leftButton.isPressed)
         {
-            var ray = _cam.ScreenPointToRay(mouse.position.ReadValue());
+            var ray = ScreenHelper.ScreenPointToRay(_cam, mouse.position.ReadValue());
             if (_dragPlane.Raycast(ray, out float enter))
             {
                 Vector3 target = ray.GetPoint(enter) + _dragOffset;
