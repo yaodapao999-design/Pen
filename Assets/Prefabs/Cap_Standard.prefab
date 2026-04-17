@@ -67,6 +67,7 @@ GameObject:
   - component: {fileID: 1967167133076505418}
   - component: {fileID: 7576550923447432962}
   - component: {fileID: 6430228221355144071}
+  - component: {fileID: 7767342301610737032}
   m_Layer: 0
   m_Name: cylinder
   m_TagString: Untagged
@@ -122,7 +123,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: bcaeba74ebdafc8479c0e089e4ba2e7f, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -146,6 +147,22 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!114 &7767342301610737032
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6253154025684879861}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4bbf9cbec60ae704f8a1d639d413e8e5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp-firstpass::Environment.Instancing.MeshInstancesBehaviour
+  UseSubMesh: 0
+  SubMeshIndex: 0
+  Density: 1
+  InstancingSettings: []
 --- !u!1 &8838844995247922154
 GameObject:
   m_ObjectHideFlags: 0

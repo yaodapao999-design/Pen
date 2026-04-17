@@ -119,8 +119,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 89442fb6b9ce946ef8ee0b7633510186, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::WorkshopSlot
-  TargetAssembly: {fileID: 0}
-  DragArea: {fileID: 0}
 --- !u!1 &3395452257914044113
 GameObject:
   m_ObjectHideFlags: 0
@@ -491,7 +489,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: -5305885509570978451, guid: ea1c95c774b1a47089dbbf5aab87813e, type: 3}
+  - {fileID: 2100000, guid: 164b19ee0f386e14593c96a376638cbb, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
