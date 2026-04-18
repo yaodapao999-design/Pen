@@ -18,9 +18,8 @@ MonoBehaviour:
   VisualPrefab: {fileID: 4216138323867839986, guid: e49295a9b36534524bd15b7df1fe4d2c, type: 3}
   Icon: {fileID: 0}
   PlugsInto: 0
-  ProvidesSocket: 010000000200000003000000
-  Mass: 2
-  OverrideGlobalFriction: 0
+  Mass: 1
   PhysicsMaterial: {fileID: 0}
   LaunchPowerMultiplier: 1
   BuyPrice: 0
+  Effects: []

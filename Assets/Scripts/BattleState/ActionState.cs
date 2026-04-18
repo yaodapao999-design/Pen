@@ -17,7 +17,7 @@ public class ActionState : IEntityState
     {
         elapsedTime = 0f;
 
-        ctx.pen.Launch(ctx.LaunchDirection, ctx.LaunchForce, ctx.ContactOffset);
+        ctx.pen.Launch(ctx.LaunchDirection, ctx.LaunchForce, ctx.ContactPointWorld);
         Debug.Log("进入弹射状态");
     }
 

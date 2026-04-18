@@ -2,81 +2,106 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 物理聚合器：遍历所有部件，收集物理效果，一次性应用到 Rigidbody
+/// 物理聚合器（只管"零件影响什么"）。
+///
+/// 零件影响的物理属性：
+///   ① 质心（COM）：Mass-加权 = Σ(m_i × pos_i) / Σm_i —— "重头偏心"的玩法手感
+///   ② 接触摩擦：每个 Collider 挂自己 PartData 的 PhysicsMaterial —— Unity 在接触时
+///      自动选接触点那个 Collider 的材质
+///
+/// 零件 NOT 影响的（由 PenEntity 固定，与配置无关）：
+///   - 惯性张量（旋转的"重感"）
+///   - 角向/线性阻力（停止时间）
+///
+/// 这样的设计让"装/卸零件"只改变重心分布和摩擦特性，旋转手感本身永远稳定一致。
 /// </summary>
 public class PenPhysicsAggregator
 {
     private readonly Rigidbody _rb;
-    private readonly Collider _mainCollider;
+    private readonly Collider _barrelCollider;
 
-    // Inspector 里设置的基础值，永远不变
-    private readonly float _baseMass;
-    private readonly Vector3 _baseCenterOfMass;
-
-    public PenPhysicsAggregator(Rigidbody rb, Collider mainCollider)
+    public PenPhysicsAggregator(Rigidbody rb, Collider barrelCollider)
     {
         _rb = rb;
-        _mainCollider = mainCollider;
-        // 记录初始值作为基础
-        _baseMass = rb.mass;
-        _baseCenterOfMass = rb.centerOfMass;
+        _barrelCollider = barrelCollider;
     }
 
-    /// <summary>在 Inspector 基础值上叠加所有部件属性</summary>
-    public void Recalculate(IReadOnlyList<PenPartInstance> parts)
+    public void Recalculate(
+        PenPartData barrelData,
+        IReadOnlyList<PenPartInstance> parts)
     {
-        var state = new PenPhysicsState();
+        float totalMass = 0f;
+        Vector3 massWeightedPosSumWorld = Vector3.zero;
 
-        foreach (var part in parts)
+        // Barrel
+        if (barrelData != null && _barrelCollider != null)
         {
-            var effects = BuildEffects(part);
-            foreach (var effect in effects)
-                effect.Apply(state);
+            ApplyContactMaterial(_barrelCollider, barrelData);
+            float m = Mathf.Max(barrelData.Mass, 0f);
+            if (m > 0f)
+            {
+                totalMass += m;
+                massWeightedPosSumWorld += _barrelCollider.bounds.center * m;
+            }
         }
 
-        float totalMass = _baseMass + state.TotalMass;
+        // 子零件
+        foreach (var part in parts)
+        {
+            if (part == null || part.Data == null) continue;
+            var col = part.GameObject.GetComponent<Collider>();
+            if (col == null)
+            {
+                Debug.LogWarning($"[PenPhysicsAggregator] {part.Data.DisplayName} 的 VisualPrefab 缺少 Collider——" +
+                                 " 不会贡献 COM 或接触摩擦。请给该 prefab 添加原生 Collider。");
+                continue;
+            }
+            ApplyContactMaterial(col, part.Data);
+            float m = Mathf.Max(part.Data.Mass, 0f);
+            if (m > 0f)
+            {
+                totalMass += m;
+                massWeightedPosSumWorld += col.bounds.center * m;
+            }
+        }
+
+        if (totalMass <= 0f) return;
+
+        // COM 是手算 Mass 加权——必须关掉 Unity 的自动重算，否则它会按"体积加权"覆盖
+        _rb.automaticCenterOfMass = false;
+
         _rb.mass = totalMass;
+        Vector3 comWorld = massWeightedPosSumWorld / totalMass;
+        _rb.centerOfMass = _rb.transform.InverseTransformPoint(comWorld);
 
-        // 加权质心：笔杆基础质心 + 所有部件（质量 × 局部坐标）
-        Vector3 weightedSum = _baseCenterOfMass * _baseMass;
-        foreach (var part in parts)
-            weightedSum += part.GameObject.transform.localPosition * part.Data.Mass;
-
-        _rb.centerOfMass = weightedSum / totalMass;
-
-        if (state.GlobalPhysicsMaterial != null)
-            _mainCollider.material = state.GlobalPhysicsMaterial;
+        // 注意：不碰 inertiaTensor —— 由 PenEntity.Awake 设为固定值，零件加减不影响
     }
 
-    /// <summary>从 PenPartData 构建该部件的物理效果列表</summary>
-    private List<IPenPartEffect> BuildEffects(PenPartInstance part)
+    /// <summary>
+    /// 把 PartData 的接触材质挂到 Collider。
+    /// PhysicsMaterial 留空 → collider.material = null → Unity 使用 Physics Settings 里的默认材质。
+    /// isTrigger = false 强制战斗期 Collider 参与物理。
+    /// </summary>
+    private static void ApplyContactMaterial(Collider col, PenPartData data)
     {
-        var effects = new List<IPenPartEffect>();
-        var data = part.Data;
-
-        // 质量 + 质心
-        effects.Add(new MassEffect(data.Mass));
-
-        // 弹射倍率
-        if (!Mathf.Approximately(data.LaunchPowerMultiplier, 1f))
-            effects.Add(new LaunchEffect(data.LaunchPowerMultiplier));
-
-        // 摩擦
-        if (data.PhysicsMaterial != null)
-        {
-            var collider = part.GameObject.GetComponent<Collider>();
-            effects.Add(new FrictionEffect(data.PhysicsMaterial, data.OverrideGlobalFriction, collider));
-        }
-
-        return effects;
+        if (col == null || data == null) return;
+        col.isTrigger = false;
+        col.material = data.PhysicsMaterial;
     }
 
-    /// <summary>从所有部件聚合弹射倍率（供 PenEntity.Launch 使用）</summary>
+    /// <summary>
+    /// 聚合弹射倍率（加法叠加）。
+    /// 每个零件 LaunchPowerMultiplier 的"偏离 1.0"被当作百分比 bonus 累加：
+    ///   bonus = Σ(mult_i - 1)；最终倍率 = 1 + bonus
+    /// </summary>
     public float GetLaunchMultiplier(IReadOnlyList<PenPartInstance> parts)
     {
-        float multiplier = 1f;
+        float bonus = 0f;
         foreach (var part in parts)
-            multiplier *= part.Data.LaunchPowerMultiplier;
-        return multiplier;
+        {
+            if (part == null || part.Data == null) continue;
+            bonus += part.Data.LaunchPowerMultiplier - 1f;
+        }
+        return Mathf.Max(1f + bonus, 0.1f);
     }
 }

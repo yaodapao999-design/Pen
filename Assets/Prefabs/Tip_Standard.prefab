@@ -11,7 +11,6 @@ GameObject:
   - component: {fileID: 281521742720432245}
   - component: {fileID: 1659673487839227652}
   - component: {fileID: 3079719329033756728}
-  - component: {fileID: 7789407482681123089}
   m_Layer: 0
   m_Name: cylinder_1
   m_TagString: Untagged
@@ -91,22 +90,6 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!114 &7789407482681123089
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 352181487770418075}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4bbf9cbec60ae704f8a1d639d413e8e5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp-firstpass::Environment.Instancing.MeshInstancesBehaviour
-  UseSubMesh: 0
-  SubMeshIndex: 0
-  Density: 1
-  InstancingSettings: []
 --- !u!1 &4162268428550242197
 GameObject:
   m_ObjectHideFlags: 0
@@ -152,7 +135,6 @@ GameObject:
   - component: {fileID: 6295074393013420377}
   - component: {fileID: 5510976546885315690}
   - component: {fileID: 2646748967120193165}
-  - component: {fileID: 5043880596389960709}
   m_Layer: 0
   m_Name: cone
   m_TagString: Untagged
@@ -232,22 +214,6 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!114 &5043880596389960709
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4826072709649925937}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4bbf9cbec60ae704f8a1d639d413e8e5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp-firstpass::Environment.Instancing.MeshInstancesBehaviour
-  UseSubMesh: 0
-  SubMeshIndex: 0
-  Density: 1
-  InstancingSettings: []
 --- !u!1 &8347137561863255164
 GameObject:
   m_ObjectHideFlags: 0
@@ -315,7 +281,6 @@ GameObject:
   - component: {fileID: 4407598235348693984}
   - component: {fileID: 8391081653499195987}
   - component: {fileID: 4120050970424357650}
-  - component: {fileID: 7029607046892530013}
   m_Layer: 0
   m_Name: tip
   m_TagString: Untagged
@@ -395,19 +360,3 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!114 &7029607046892530013
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8530870229540880994}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4bbf9cbec60ae704f8a1d639d413e8e5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp-firstpass::Environment.Instancing.MeshInstancesBehaviour
-  UseSubMesh: 0
-  SubMeshIndex: 0
-  Density: 1
-  InstancingSettings: []

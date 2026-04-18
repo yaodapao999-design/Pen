@@ -62,14 +62,6 @@ public class FocusCameraController : MonoBehaviour
     [Tooltip("FOV Punch 恢复时间（秒）")]
     [SerializeField] private float fovPunchDecay = 0.4f;
 
-    // ── 优先级 ──────────────────────────────────────────────────────
-    [Header("优先级控制")]
-    [Tooltip("聚焦模式激活时的 Cinemachine 优先级（应高于 GameplayCamera）")]
-    [SerializeField] private int activePriority = 15;
-
-    [Tooltip("聚焦模式关闭时的优先级（低于 GameplayCamera）")]
-    [SerializeField] private int inactivePriority = 5;
-
     // ── 内部状态 ────────────────────────────────────────────────────
     /// <summary>当前仍在追踪的笔列表（已淘汰的会被移除）</summary>
     private readonly List<Transform> _activePens = new();
@@ -165,15 +157,6 @@ public class FocusCameraController : MonoBehaviour
     public void FocusOn(Vector3 contactPoint, float intensity)
     {
         _punchFOV = maxFovPunch * intensity;
-    }
-
-    /// <summary>
-    /// 激活 / 停用聚焦镜头（通过切换优先级实现，不破坏 Cinemachine 混合）。
-    /// </summary>
-    public void SetFocusActive(bool active)
-    {
-        // 保留空实现以兼容外部调用；Priority 调度已交给 GameManager
-        // 聚焦效果现在只通过 FOV Punch 表现（见 FocusOn）
     }
 
     /// <summary>当前仍在追踪的笔数量（只读）</summary>
