@@ -27,28 +27,20 @@ public class WorkshopController : MonoBehaviour
     [Header("过渡")]
     [Tooltip("退出 Workshop 时，重建战斗视图后解冻物理前的等待时间，用于等相机混合基本到位")]
     [SerializeField] private float _exitSettleDelay = 0.1f;
-    [Tooltip("进入 Workshop 时，从切换开始到隐藏战斗双方笔的延迟：给相机过渡留够时间，避免笔在玩家视野里凭空消失")]
-    [SerializeField] private float _hidePensDelay = 2f;
-
     [Header("改装台")]
     public WorkshopSlot WorkshopSlot;
 
     [Header("当前笔配置")]
+    [Tooltip("玩家笔。初始装配由 GameManager 从 PlayerLoadoutSO 注入；Workshop 只做视图构建和数据读写")]
     public PenAssembly CurrentPen;
-    public PenPartData CurrentBarrel;
-    public PenPartData[] CurrentParts;
 
     [Header("引用")]
     public WorkshopPenSpawner PenSpawner;
-    [Tooltip("战斗状态机，进改装时隐藏双方笔，出改装时由 BattlePhase 重新激活并归位")]
-    public BattleStateMachine BattleSM;
 
     private CinemachineBrain _brain;
     private bool _inDrawer;
     private Rigidbody _penRb;
     private bool _isTransitioning;
-    private Vector3 _penOriginalPosition;
-    private Quaternion _penOriginalRotation;
 
     private WorkshopPartRegistry Registry => WorkshopPartRegistry.Instance;
 
@@ -77,11 +69,7 @@ public class WorkshopController : MonoBehaviour
         _brain = Camera.main.GetComponent<CinemachineBrain>();
         if (CurrentPen != null) _penRb = CurrentPen.GetComponent<Rigidbody>();
 
-        if (CurrentBarrel != null && CurrentPen != null)
-        {
-            CurrentPen.InitData(CurrentBarrel, CurrentParts);
-            CurrentPen.BuildBattleView();
-        }
+        // 笔的初始装配（Barrel + Equipped）和战斗视图由 GameManager.ApplyLoadoutOnNewSave 统一处理
     }
 
     // ─── 输入 ─────────────────────────────────────────────────────────────────
@@ -107,9 +95,23 @@ public class WorkshopController : MonoBehaviour
         // ── 按下拖拽 ──
         if (mouse.leftButton.wasPressedThisFrame && target != null)
         {
+            // 已有零件在"点击切换"拖拽中 → 这一帧把输入让给它走 Clicked→End，不启动新拖拽
+            // 否则会出现"旧零件被 HandleMouseUp 随地一放 + 新零件同时被 BeginDrag"的双拖拽
+            if (HasAnyDragging()) return;
+
             ClearHover(); // 拖拽开始时关掉高亮
             target.BeginDrag();
         }
+    }
+
+    /// <summary>是否存在任何处于 Dragging 状态的 WorkshopPart（供 Update 避免跨零件双拖拽）</summary>
+    private bool HasAnyDragging()
+    {
+        if (Registry == null) return false;
+        foreach (var wp in Registry.All)
+            if (wp != null && wp.State == WorkshopPart.PartState.Dragging)
+                return true;
+        return false;
     }
 
     /// <summary>射线检测：优先子零件，兜底笔杆</summary>
@@ -158,7 +160,7 @@ public class WorkshopController : MonoBehaviour
                 if (barrel != null)
                 {
                     _transparentBarrel = barrel;
-                    SetAlpha(barrel, BarrelTransparentAlpha);
+                    MaterialAlphaUtility.ApplyAlpha(barrel.gameObject, BarrelTransparentAlpha);
                 }
             }
         }
@@ -182,34 +184,8 @@ public class WorkshopController : MonoBehaviour
         // 恢复笔杆不透明
         if (_transparentBarrel != null)
         {
-            SetAlpha(_transparentBarrel, 1f);
+            MaterialAlphaUtility.ApplyAlpha(_transparentBarrel.gameObject, 1f);
             _transparentBarrel = null;
-        }
-    }
-
-    private static void SetAlpha(WorkshopPart wp, float alpha)
-    {
-        foreach (var r in wp.GetComponentsInChildren<Renderer>())
-        {
-            foreach (var mat in r.materials)
-            {
-                var c = mat.color;
-                mat.color = new Color(c.r, c.g, c.b, alpha);
-                if (alpha < 1f)
-                {
-                    mat.SetFloat("_Surface", 1);
-                    mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-                    mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-                    mat.renderQueue = 3000;
-                }
-                else
-                {
-                    mat.SetFloat("_Surface", 0);
-                    mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.One);
-                    mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.Zero);
-                    mat.renderQueue = -1;
-                }
-            }
         }
     }
 
@@ -285,25 +261,23 @@ public class WorkshopController : MonoBehaviour
         // 镜头优先级已由 GameManager 在 ChangePhase 开始时抬起，此处不再 set
         yield return new WaitForSeconds(GetBlendDuration());
 
-        _penOriginalPosition = CurrentPen.transform.position;
-        _penOriginalRotation = CurrentPen.transform.rotation;
-
-        CurrentPen.ClearBattleView();
-        SetPenEntityVisible(false);
-
-        // 无书可推，进改装延迟隐藏双方笔；让相机过渡期间玩家仍能看到笔在桌上，不突兀
-        // 位置已由 BattlePhase.Exit 快照
-        if (BattleSM != null) StartCoroutine(HidePensAfterDelay(_hidePensDelay));
-
+        // 笔位置所有权属于 BattleStateMachine（SnapshotPens/RestorePens 管理）；
+        // 两把笔的 SetActive(false) 由 BattlePhase.Exit 启动的统一倒计时负责，
+        // Player 和 Enemy 同步消失。Workshop 不再碰 Player 视觉——
+        // 退出 Workshop 时 PenAssembly.BuildBattleView 内部会自动 ClearBattleView 重建。
         CreateWorkshopView();
         if (PenSpawner != null) PenSpawner.SpawnParts();
 
         var frozenParts = FreezeLooseParts();
 
+        Vector3 drawerStartPos = DrawerAnim != null ? DrawerAnim.DrawerTransform.position : Vector3.zero;
         if (DrawerAnim != null)
             yield return AnimateDrawerAndFollow(open: true, frozenParts);
+        Vector3 drawerEndPos = DrawerAnim != null ? DrawerAnim.DrawerTransform.position : Vector3.zero;
 
-        UnfreezeAll(frozenParts);
+        // 开门到位：给散落件沿抽屉运动方向一个初速度，模拟"抽屉停下零件因惯性前冲"
+        float inertia = WorkshopConfig.Instance != null ? WorkshopConfig.Instance.DrawerOpenInertia : 0.8f;
+        UnfreezeWithInertia(frozenParts, drawerEndPos - drawerStartPos, inertia);
 
         // 抽屉打开后更新锚点（世界坐标已改变）
         var barrel = Registry?.GetAssembledBarrel();
@@ -315,12 +289,6 @@ public class WorkshopController : MonoBehaviour
 
     // ─── 退出改装 ─────────────────────────────────────────────────────────────
 
-    private IEnumerator HidePensAfterDelay(float delay)
-    {
-        yield return new WaitForSeconds(Mathf.Max(0f, delay));
-        if (BattleSM != null) BattleSM.SetPensActive(false);
-    }
-
     private IEnumerator TransitionFromDrawer()
     {
         _isTransitioning = true;
@@ -330,21 +298,14 @@ public class WorkshopController : MonoBehaviour
         if (DrawerAnim != null)
             yield return AnimateDrawerAndFollow(open: false, frozenParts);
 
-        // 抽屉关闭后：写回数据 → 销毁容器 → 重建战斗视图
+        // 抽屉关闭后：记忆散落件位置 → 写回数据 → 销毁容器 → 重建战斗视图
+        if (PenSpawner != null) PenSpawner.MemorizeLoosePoses();
         WriteBackData();
         DestroyAllWorkshopParts();
 
-        // 在 BuildBattleView 前重新激活笔根节点，否则新建的战斗视图挂在 inactive 父物体下不可见
-        if (BattleSM != null) BattleSM.SetPensActive(true);
-
         SetPenEntityVisible(true);
-        CurrentPen.transform.SetPositionAndRotation(_penOriginalPosition, _penOriginalRotation);
-        if (_penRb != null)
-        {
-            _penRb.position = _penOriginalPosition;
-            _penRb.rotation = _penOriginalRotation;
-        }
-
+        // Player 笔位置由 BattlePhase.Enter 的 RestorePens 统一恢复；Workshop 不再强行 SetPosition
+        // 避免和 BSM 快照争夺所有权产生可见闪帧
         CurrentPen.BuildBattleView();
 
         // 镜头优先级由 GameManager 调度，这里不改
@@ -406,6 +367,7 @@ public class WorkshopController : MonoBehaviour
             return;
         }
 
+        // ① Assembly 数据：已装配到笔杆的零件
         var parts = new List<PenAssembly.PartEntry>();
         foreach (var socket in barrel.GetComponentsInChildren<PartSocket>())
         {
@@ -413,8 +375,22 @@ public class WorkshopController : MonoBehaviour
             if (child != null && child != barrel && child.PartData != null)
                 parts.Add(new PenAssembly.PartEntry(child.PartData, socket.SocketType));
         }
-
         CurrentPen.SetData(barrel.PartData, parts);
+
+        // ② Inventory 数据：抽屉里仍然 Loose 的零件
+        //   Equipment-as-Container 语义：零件要么在 Inventory 要么在 Assembly，互斥。
+        //   不写回会导致：卸下的零件丢失，装上的零件在下次散落时重复出现。
+        var inv = GameManager.Instance != null ? GameManager.Instance.Inventory : null;
+        if (inv != null)
+        {
+            inv.Clear();
+            foreach (var wp in Registry.All)
+            {
+                if (wp == null || wp.PartData == null) continue;
+                if (wp.State != WorkshopPart.PartState.Loose) continue;
+                inv.Add(wp.PartData);
+            }
+        }
     }
 
     private void DestroyAllWorkshopParts()
@@ -472,6 +448,29 @@ public class WorkshopController : MonoBehaviour
                 rb.linearVelocity = Vector3.zero;
                 rb.angularVelocity = Vector3.zero;
             }
+        }
+    }
+
+    /// <summary>
+    /// 惯性解冻：Dynamic 化 + 沿 motion 方向赋初速度（VelocityChange 与质量无关，表现一致）。
+    /// motion 为 0 或 velocity ≤ 0 时退化为普通 UnfreezeAll。
+    /// </summary>
+    private void UnfreezeWithInertia(List<(Transform t, Vector3 start)> parts, Vector3 motion, float velocity)
+    {
+        if (motion.sqrMagnitude < 0.0001f || velocity <= 0f)
+        {
+            UnfreezeAll(parts);
+            return;
+        }
+        Vector3 v = motion.normalized * velocity;
+        foreach (var (t, _) in parts)
+        {
+            if (t == null) continue;
+            var rb = t.GetComponent<Rigidbody>();
+            if (rb == null) continue;
+            rb.isKinematic = false;
+            rb.linearVelocity = v;
+            rb.angularVelocity = Vector3.zero;
         }
     }
 

@@ -47,6 +47,7 @@ public class WorkshopPart : MonoBehaviour
     private SocketHighlighter _highlighter;
     private AudioSource _audio;
     private bool _isDragging;
+    private readonly DragInputState _dragInput = new();
     private Plane _dragPlane;
     private Vector3 _dragOffset;
     private Vector3 _dragTarget;
@@ -143,49 +144,51 @@ public class WorkshopPart : MonoBehaviour
         var mouse = Mouse.current;
         if (mouse == null) return;
 
-        if (mouse.leftButton.isPressed)
+        // 无论按住还是点击切换模式，拖拽中每帧都让目标跟随鼠标
+        var ray = ScreenHelper.ScreenPointToRay(_cam, mouse.position.ReadValue());
+        if (_dragPlane.Raycast(ray, out float enter))
         {
-            var ray = ScreenHelper.ScreenPointToRay(_cam, mouse.position.ReadValue());
-            if (_dragPlane.Raycast(ray, out float enter))
+            Vector3 target = ray.GetPoint(enter) + _dragOffset;
+            if (DragArea != null)
             {
-                Vector3 target = ray.GetPoint(enter) + _dragOffset;
-                if (DragArea != null)
-                {
-                    var b = DragArea.bounds;
-                    target.x = Mathf.Clamp(target.x, b.min.x, b.max.x);
-                    target.z = Mathf.Clamp(target.z, b.min.z, b.max.z);
-                }
-                target.y += DragLiftHeight;
-
-                // 磁吸引导：非笔杆零件接近 socket 时目标被吸引偏移
-                if (!IsBarrel)
-                {
-                    var socket = FindNearestSocket();
-                    UpdatePreview(socket);
-                    if (socket != null)
-                    {
-                        float dist = Vector3.Distance(
-                            _col.ClosestPoint(socket.transform.position),
-                            socket.transform.position);
-                        if (dist < SnapDistance)
-                        {
-                            float pull = (1f - dist / SnapDistance) * MagnetStrength;
-                            target = Vector3.Lerp(target, socket.transform.position, pull);
-                        }
-                    }
-                }
-
-                _dragTarget = target;
+                var b = DragArea.bounds;
+                target.x = Mathf.Clamp(target.x, b.min.x, b.max.x);
+                target.z = Mathf.Clamp(target.z, b.min.z, b.max.z);
             }
 
-            if (IsBarrel)
-                _highlighter?.UpdateBarrelNearest(transform.position, SnapDistance);
-            else
-                _highlighter?.UpdateNearest(_col, SnapDistance);
+            // 磁吸引导：非笔杆零件接近 socket 时目标被吸引偏移
+            if (!IsBarrel)
+            {
+                var socket = FindNearestSocket();
+                UpdatePreview(socket);
+                if (socket != null)
+                {
+                    float dist = Vector3.Distance(
+                        _col.ClosestPoint(socket.transform.position),
+                        socket.transform.position);
+                    if (dist < SnapDistance)
+                    {
+                        float pull = (1f - dist / SnapDistance) * MagnetStrength;
+                        target = Vector3.Lerp(target, socket.transform.position, pull);
+                    }
+                }
+            }
+
+            _dragTarget = target;
         }
 
-        if (mouse.leftButton.wasReleasedThisFrame)
-            HandleMouseUp();
+        if (IsBarrel)
+            _highlighter?.UpdateBarrelNearest(transform.position, SnapDistance);
+        else
+            _highlighter?.UpdateNearest(_col, SnapDistance);
+
+        // 统一的 hold/click/cancel 手势处理
+        var evt = _dragInput.Poll(
+            mouse.leftButton.wasPressedThisFrame,
+            mouse.leftButton.wasReleasedThisFrame,
+            mouse.rightButton.wasPressedThisFrame);
+        if (evt == DragInputState.Event.End) HandleMouseUp();
+        else if (evt == DragInputState.Event.Cancel) CancelDrag();
     }
 
     private void FixedUpdate()
@@ -197,15 +200,18 @@ public class WorkshopPart : MonoBehaviour
     public void BeginDrag()
     {
         if (State == PartState.Snapping) return;
+        if (_isDragging) return; // 防重入（点击切换模式下再点到自己）
+
+        _dragInput.NotifyBegin();
 
         _dragStartPosition = transform.position;
         _dragStartRotation = transform.rotation;
 
-        _dragPlane = new Plane(Vector3.up, transform.position);
+        // 用 DragPlane 工具统一构造拖拽平面：锚点用实际点击网格点 + 抬升高度
+        // 这样 45°/70° 俯视相机下光标和物体不会错位
         var ray = ScreenHelper.ScreenPointToRay(_cam, Mouse.current.position.ReadValue());
-        _dragOffset = _dragPlane.Raycast(ray, out float enter)
-            ? transform.position - ray.GetPoint(enter)
-            : Vector3.zero;
+        DragPlane.TryBuild(_col, transform.position, ray, DragLiftHeight,
+            out _dragPlane, out _dragOffset, out _);
 
         if (State == PartState.Assembled)
             transform.SetParent(null);
@@ -257,9 +263,22 @@ public class WorkshopPart : MonoBehaviour
         }
     }
 
+    /// <summary>右键取消：走"回到起始位置"路径，不尝试吸附/装配/脱离</summary>
+    private void CancelDrag()
+    {
+        _isDragging = false;
+        _dragInput.ForceEnd();
+        _highlighter?.HideAll();
+        ClearPreviewAndThreat();
+        IgnoreBarrelCollision(false);
+        _rb.useGravity = false;
+        StartCoroutine(AnimateReturnToStart());
+    }
+
     private void HandleMouseUp()
     {
         _isDragging = false;
+        _dragInput.ForceEnd();
         _highlighter?.HideAll();
         ClearPreviewAndThreat();
         IgnoreBarrelCollision(false);
@@ -484,17 +503,7 @@ public class WorkshopPart : MonoBehaviour
             _preview.transform.localPosition = Vector3.zero;
             _preview.transform.localRotation = Quaternion.identity;
 
-            foreach (var r in _preview.GetComponentsInChildren<Renderer>())
-            {
-                foreach (var mat in r.materials)
-                {
-                    mat.color = new Color(mat.color.r, mat.color.g, mat.color.b, 0.3f);
-                    mat.SetFloat("_Surface", 1);
-                    mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-                    mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-                    mat.renderQueue = 3000;
-                }
-            }
+            MaterialAlphaUtility.ApplyAlpha(_preview, 0.3f);
             foreach (var c in _preview.GetComponentsInChildren<Collider>())
                 c.enabled = false;
         }
@@ -506,7 +515,7 @@ public class WorkshopPart : MonoBehaviour
             _threattenedOccupant = occupant;
             _threattenedOriginalScale = occupant.transform.localScale;
             occupant.transform.localScale = _threattenedOriginalScale * 0.85f;
-            SetRendererAlpha(occupant, 0.5f);
+            MaterialAlphaUtility.ApplyAlpha(occupant.gameObject, 0.5f);
         }
     }
 
@@ -522,37 +531,11 @@ public class WorkshopPart : MonoBehaviour
         if (_threattenedOccupant != null)
         {
             _threattenedOccupant.transform.localScale = _threattenedOriginalScale;
-            SetRendererAlpha(_threattenedOccupant, 1f);
+            MaterialAlphaUtility.ApplyAlpha(_threattenedOccupant.gameObject, 1f);
             _threattenedOccupant = null;
         }
 
         _nearestSocket = null;
-    }
-
-    private static void SetRendererAlpha(WorkshopPart wp, float alpha)
-    {
-        foreach (var r in wp.GetComponentsInChildren<Renderer>())
-        {
-            foreach (var mat in r.materials)
-            {
-                var c = mat.color;
-                mat.color = new Color(c.r, c.g, c.b, alpha);
-                if (alpha < 1f)
-                {
-                    mat.SetFloat("_Surface", 1);
-                    mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-                    mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-                    mat.renderQueue = 3000;
-                }
-                else
-                {
-                    mat.SetFloat("_Surface", 0);
-                    mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.One);
-                    mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.Zero);
-                    mat.renderQueue = -1;
-                }
-            }
-        }
     }
 
     // ─── 动画工具 ─────────────────────────────────────────────────────────────

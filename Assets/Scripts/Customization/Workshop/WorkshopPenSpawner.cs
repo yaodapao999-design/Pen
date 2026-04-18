@@ -9,10 +9,19 @@ using UnityEngine;
 public class WorkshopPenSpawner : MonoBehaviour
 {
     [Header("生成配置")]
-    [Tooltip("可在 Inspector 填初始零件；GameManager 进 Workshop 前可用 SetAvailableParts 覆盖")]
-    public List<PenPartData> AvailableParts = new List<PenPartData>();
     public BoxCollider SpawnArea;
     public WorkshopSlot WorkshopSlot;
+
+    /// <summary>
+    /// 当前要生成的散落零件列表。仅运行时存在，数据源是 PlayerInventory —
+    /// GameManager 在进入 Workshop 前调 SetAvailableParts(Inventory.GetAll()) 注入，
+    /// 商店购买的零件在下次打开抽屉时自动随仓库同步出现。
+    /// </summary>
+    [System.NonSerialized]
+    public List<PenPartData> AvailableParts = new List<PenPartData>();
+
+    /// <summary>记忆上次退出改装时散落零件的位姿，按 PenPartData 分组（允许重复）；下次打开抽屉从队列取用</summary>
+    private readonly Dictionary<PenPartData, Queue<(Vector3 pos, Quaternion rot)>> _memorizedPoses = new();
 
     /// <summary>由 GameManager 在进入 Workshop 前注入玩家库存（覆盖当前列表）</summary>
     public void SetAvailableParts(System.Collections.Generic.IEnumerable<PenPartData> parts)
@@ -23,37 +32,109 @@ public class WorkshopPenSpawner : MonoBehaviour
             if (p != null) AvailableParts.Add(p);
     }
 
+    /// <summary>
+    /// 首次或库存新增的零件随机散布；已记忆位置的用原位，实现"第一次散落、之后原位"的视觉记忆。
+    /// </summary>
     public void SpawnParts()
     {
         if (AvailableParts == null) return;
+
+        // 拷贝一份记忆，每 spawn 一件消耗一条匹配记录，避免重复使用
+        var working = new Dictionary<PenPartData, Queue<(Vector3, Quaternion)>>();
+        foreach (var kv in _memorizedPoses)
+            working[kv.Key] = new Queue<(Vector3, Quaternion)>(kv.Value);
 
         foreach (var partData in AvailableParts)
         {
             if (partData == null || partData.VisualPrefab == null) continue;
 
-            var rot = Quaternion.Euler(0, Random.Range(0f, 360f), 0);
+            bool tryMemory = working.TryGetValue(partData, out var memQueue) && memQueue.Count > 0;
+
+            bool useMemory = false;
+            Vector3 memoryPos = default;
+            Quaternion memoryRot = default;
+            if (tryMemory)
+            {
+                var next = memQueue.Peek();
+                if (IsPoseInsideSpawnArea(next.Item1))
+                {
+                    useMemory = true;
+                    memoryPos = next.Item1;
+                    memoryRot = next.Item2;
+                    memQueue.Dequeue();
+                }
+                else
+                {
+                    memQueue.Dequeue(); // 无效记忆丢弃
+                }
+            }
+
+            Quaternion rot = useMemory
+                ? memoryRot
+                : Quaternion.Euler(0, Random.Range(0f, 360f), 0);
 
             var wp = WorkshopPartFactory.Create(
                 partData, Vector3.zero, rot,
                 WorkshopSlot, SpawnArea);
 
-            // 用碰撞体世界 AABB 半尺寸寻找合法位置
-            var col = wp.GetComponent<BoxCollider>();
-            var pos = GetSpawnPosOutsideSlot(col.bounds.extents);
-            if (!pos.HasValue) { Destroy(wp.gameObject); continue; }
-
-            // 设置位置并贴地
-            wp.transform.position = pos.Value;
-            var renderers = wp.GetComponentsInChildren<Renderer>();
-            if (renderers.Length > 0)
+            Vector3 placement;
+            if (useMemory)
             {
-                var wb = renderers[0].bounds;
-                foreach (var r in renderers) wb.Encapsulate(r.bounds);
-                wp.transform.position += Vector3.up * (pos.Value.y - wb.min.y);
+                placement = memoryPos;
+            }
+            else
+            {
+                var col = wp.GetComponent<BoxCollider>();
+                var random = GetSpawnPosOutsideSlot(col.bounds.extents);
+                if (!random.HasValue) { Destroy(wp.gameObject); continue; }
+                placement = random.Value;
+            }
+
+            wp.transform.position = placement;
+
+            if (!useMemory)
+            {
+                // 首次散落才贴地（记忆位置已在合理高度）
+                var renderers = wp.GetComponentsInChildren<Renderer>();
+                if (renderers.Length > 0)
+                {
+                    var wb = renderers[0].bounds;
+                    foreach (var r in renderers) wb.Encapsulate(r.bounds);
+                    wp.transform.position += Vector3.up * (placement.y - wb.min.y);
+                }
             }
 
             wp.SetLoose();
         }
+    }
+
+    /// <summary>退出改装前调用：快照当前所有 Loose 散落零件的位姿，下次打开复原。</summary>
+    public void MemorizeLoosePoses()
+    {
+        _memorizedPoses.Clear();
+        var registry = WorkshopPartRegistry.Instance;
+        if (registry == null) return;
+        foreach (var wp in registry.All)
+        {
+            if (wp == null || wp.PartData == null) continue;
+            if (wp.State != WorkshopPart.PartState.Loose) continue;
+            if (!_memorizedPoses.TryGetValue(wp.PartData, out var q))
+            {
+                q = new Queue<(Vector3, Quaternion)>();
+                _memorizedPoses[wp.PartData] = q;
+            }
+            q.Enqueue((wp.transform.position, wp.transform.rotation));
+        }
+    }
+
+    /// <summary>记忆位置合法性：防止零件曾滚出抽屉 / 在 Y 异常处被记住</summary>
+    private bool IsPoseInsideSpawnArea(Vector3 pos)
+    {
+        if (SpawnArea == null) return true;
+        var b = SpawnArea.bounds;
+        return pos.x >= b.min.x && pos.x <= b.max.x
+            && pos.z >= b.min.z && pos.z <= b.max.z
+            && pos.y >= b.min.y - 0.5f && pos.y <= b.max.y + 1f;
     }
 
     /// <summary>在指定位置生成散落零件（不做区域校验，由调用方确定位置）</summary>

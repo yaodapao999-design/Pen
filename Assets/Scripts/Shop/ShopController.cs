@@ -30,10 +30,6 @@ public class ShopController : MonoBehaviour
     [Tooltip("笔记本滑入/滑出动画；留空则走瞬切")]
     public ShopBookAnimator BookAnimator;
 
-    [Header("战斗笔联动（可选）")]
-    [Tooltip("书到位后会把这两把笔隐藏（由 Battle 快照位置，重进时会从记忆位置上方落回）；留空则无联动")]
-    public BattleStateMachine BattleSM;
-
     [Header("镜头（由 GameManager 调度，本地不改 Priority）")]
     public CinemachineCamera ShopVCam;
 
@@ -49,7 +45,9 @@ public class ShopController : MonoBehaviour
 
     // ─── 入口 ─────────────────────────────────────────────────────────────────
 
-    /// <summary>协程版 Enter：激活根 → 笔记本滑入（物理撞飞桌上笔）→ 书到位后清笔 → 生成商品。</summary>
+    /// <summary>协程版 Enter：激活根 → 笔记本滑入 → 生成商品。
+    /// Player / Enemy 笔的 SetActive(false) 由 BattlePhase.Exit 启动的统一倒计时负责（两把笔同步），
+    /// 本协程不再手动关笔，避免时机和 Workshop 不一致。</summary>
     public System.Collections.IEnumerator EnterShopRoutine()
     {
         if (_active) yield break;
@@ -61,8 +59,6 @@ public class ShopController : MonoBehaviour
             BookAnimator.SnapToExited();
             yield return BookAnimator.PlayEnter();
         }
-        // 书到位 → 笔已被物理撞飞到桌边外，此时清场
-        if (BattleSM != null) BattleSM.SetPensActive(false);
         PopulateShop();
     }
 

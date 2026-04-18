@@ -25,8 +25,8 @@ public class PenPartData : ScriptableObject
     public float Mass = 0.1f;
 
     [Header("--- 物理：摩擦 ---")]
-    // 是否覆盖全局摩擦（false = 局部摩擦，只影响该部件接触面）
-    public bool OverrideGlobalFriction = false;
+    // 该零件 Collider 的接触材质。Unity 复合刚体在接触时自动选"接触点那个 Collider 的材质"，
+    // 所以哪一端触地就用哪一端的摩擦，不需要再区分"全局 / 局部"。留空则用 Unity 默认材质。
     public PhysicsMaterial PhysicsMaterial;
 
     [Header("--- 战斗属性 ---")]

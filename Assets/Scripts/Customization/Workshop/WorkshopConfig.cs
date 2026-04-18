@@ -25,7 +25,12 @@ public class WorkshopConfig : MonoBehaviour
     public float InvalidShakeIntensity = 0.02f;
 
     [Header("散落")]
-    public float ScatterForce = 1.5f;
+    [Tooltip("拖拽笔杆时子零件被弹出的初速度 (m/s)。ForceMode.VelocityChange，与质量无关：0.3=温柔 0.6=适中 1.0=明显 2.0+=爆射")]
+    public float ScatterForce = 0.3f;
+
+    [Header("抽屉开门惯性")]
+    [Tooltip("抽屉打开到位瞬间，散落零件沿抽屉运动方向获得的初速度 (m/s)，模拟'抽屉停了零件因惯性继续前冲'。0=关闭效果")]
+    public float DrawerOpenInertia = 0.8f;
 
     [Header("音效")]
     public AudioClip SnapSound;

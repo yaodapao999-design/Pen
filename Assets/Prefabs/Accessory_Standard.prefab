@@ -11,7 +11,6 @@ GameObject:
   - component: {fileID: 1535636326605955809}
   - component: {fileID: 3191902045231196900}
   - component: {fileID: 9186917549705216427}
-  - component: {fileID: 8741626643942753927}
   m_Layer: 0
   m_Name: Accessory (1)
   m_TagString: Untagged
@@ -91,22 +90,6 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!114 &8741626643942753927
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1984852637872515872}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4bbf9cbec60ae704f8a1d639d413e8e5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp-firstpass::Environment.Instancing.MeshInstancesBehaviour
-  UseSubMesh: 0
-  SubMeshIndex: 0
-  Density: 1
-  InstancingSettings: []
 --- !u!1 &3841112404359538307
 GameObject:
   m_ObjectHideFlags: 0

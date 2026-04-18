@@ -55,6 +55,13 @@ public class PenAssembly : MonoBehaviour
     public CapsuleCollider BarrelCollider { get; private set; }
     public IReadOnlyList<PenPartInstance> BattleParts => _battleParts;
 
+    /// <summary>
+    /// 世界坐标系下从笔尾指向笔头的单位向量。
+    /// BuildBattleView 完成后有效；由 Tip Socket 位置相对胶囊中心的方向决定，
+    /// 不依赖 prefab 作者对胶囊 direction 轴向的约定。
+    /// </summary>
+    public Vector3 TipAxisWorld { get; private set; } = Vector3.right;
+
     private void Awake()
     {
         _rb = GetComponent<Rigidbody>();
@@ -99,7 +106,53 @@ public class PenAssembly : MonoBehaviour
             _battleParts.Add(instance);
         }
 
+        ComputeTipAxisWorld();
         RefreshPhysics();
+    }
+
+    /// <summary>
+    /// 根据笔杆上"接笔头端" Socket（SocketType.BarrelFront）的位置，确定"从笔尾指向笔头"的世界轴向，
+    /// 消除 prefab 作者对胶囊 direction 轴向的任意约定（+axis 到底朝哪端）。
+    /// 若 prefab 没有 BarrelFront，退化 BarrelRear 取反；都没有就保持胶囊 direction 原始正向。
+    /// </summary>
+    private void ComputeTipAxisWorld()
+    {
+        if (BarrelCollider == null) return;
+
+        Vector3 rawAxis = GetCapsuleAxisWorld(BarrelCollider);
+        TipAxisWorld = rawAxis;
+
+        Vector3 capsuleCenter = BarrelCollider.transform.TransformPoint(BarrelCollider.center);
+
+        // 优先用 BarrelFront（接笔头/笔芯那端）判断
+        foreach (var socket in _barrelRoot.GetComponentsInChildren<PartSocket>())
+        {
+            if (socket.SocketType != SocketType.BarrelFront) continue;
+            Vector3 toFront = socket.transform.position - capsuleCenter;
+            TipAxisWorld = Vector3.Dot(toFront, rawAxis) >= 0f ? rawAxis : -rawAxis;
+            return;
+        }
+
+        // 退化：用 BarrelRear（接笔帽那端）取反推出笔头方向
+        foreach (var socket in _barrelRoot.GetComponentsInChildren<PartSocket>())
+        {
+            if (socket.SocketType != SocketType.BarrelRear) continue;
+            Vector3 toRear = socket.transform.position - capsuleCenter;
+            TipAxisWorld = Vector3.Dot(toRear, rawAxis) >= 0f ? -rawAxis : rawAxis;
+            return;
+        }
+        // 都没找到：保持默认胶囊方向正向（只会发生在空笔杆 prefab 这种边缘情况）
+    }
+
+    private static Vector3 GetCapsuleAxisWorld(CapsuleCollider col)
+    {
+        return col.direction switch
+        {
+            0 => col.transform.right,
+            1 => col.transform.up,
+            2 => col.transform.forward,
+            _ => col.transform.right
+        };
     }
 
     /// <summary>销毁战斗视图（进入改装时调用）</summary>
@@ -120,7 +173,7 @@ public class PenAssembly : MonoBehaviour
     public void RefreshPhysics()
     {
         if (_aggregator == null) return;
-        _aggregator.Recalculate(_battleParts);
+        _aggregator.Recalculate(BarrelData, _battleParts);
     }
 
     public float GetLaunchMultiplier()

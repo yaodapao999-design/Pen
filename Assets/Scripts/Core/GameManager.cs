@@ -26,12 +26,18 @@ public class GameManager : MonoBehaviour
     [Header("玩家数据（ScriptableObject 资产）")]
     public PlayerInventory Inventory;
     public PlayerWallet Wallet;
+    [Tooltip("新存档的起始配置（笔杆 + 已装配零件 + 散落仓库）。未配置 = 保持场景里现有状态不变")]
+    public PlayerLoadoutSO Loadout;
 
     [Header("场景引用")]
     public BattleStateMachine BattleSM;
     public WorkshopController WorkshopCtrl;
     public WorkshopPenSpawner WorkshopSpawner;
     public ShopController ShopCtrl;
+
+    [Header("切换冷却")]
+    [Tooltip("每次阶段切换完成后额外锁定的时长（秒），防止暴力快点 / 加载未完成就再切")]
+    [SerializeField] private float _postTransitionCooldown = 2f;
 
     public GamePhase CurrentPhase { get; private set; } = GamePhase.Battle;
     public bool IsTransitioning { get; private set; }
@@ -55,6 +61,46 @@ public class GameManager : MonoBehaviour
         if (_shop.Camera != null) _shop.Camera.Priority = INACTIVE_CAM_PRIORITY;
         if (_workshop.Camera != null) _workshop.Camera.Priority = INACTIVE_CAM_PRIORITY;
         if (_battle.Camera != null) _battle.Camera.Priority = ACTIVE_CAM_PRIORITY;
+    }
+
+    private void Start()
+    {
+        // 所有 Awake 已完成（PenAssembly._rb、BattleSM.pen 都就绪），可安全写入 Loadout
+        ApplyLoadoutOnNewSave();
+    }
+
+    /// <summary>
+    /// 把 Loadout 的起始配置写入玩家数据层 + 构建笔的战斗视图。
+    /// 当前每次启动都视为"新存档"。接入存档系统后，在开头加一句
+    ///     if (SaveService.HasSave()) return;
+    /// 即可让加载存档的路径跳过这里。
+    /// </summary>
+    private void ApplyLoadoutOnNewSave()
+    {
+        if (Loadout == null)
+        {
+            Debug.LogWarning("[GameManager] Loadout 未配置，玩家笔将没有初始装备，仓库将为空。请在 Inspector 拖入 PlayerLoadout 资产。");
+            return;
+        }
+
+        // 1) 仓库：清空后写入起始散落零件（PlayerInventory 的 session-snapshot 机制
+        //    保证 OnDisable 会把磁盘还原，不污染 asset）
+        if (Inventory != null)
+        {
+            Inventory.Clear();
+            foreach (var p in Loadout.InitialInventory)
+                if (p != null) Inventory.Add(p);
+        }
+
+        // 2) 玩家笔：写数据层 + 构建战斗视图（Start 时 PenAssembly._rb 已就绪）
+        var assembly = BattleSM != null && BattleSM.Pen != null ? BattleSM.Pen.Assembly : null;
+        if (assembly != null && Loadout.InitialBarrel != null)
+        {
+            var equipped = new PenPartData[Loadout.InitialEquipped.Count];
+            for (int i = 0; i < equipped.Length; i++) equipped[i] = Loadout.InitialEquipped[i];
+            assembly.InitData(Loadout.InitialBarrel, equipped);
+            assembly.BuildBattleView();
+        }
     }
 
     // ─── 对外入口 ─────────────────────────────────────────────────────────────
@@ -120,6 +166,9 @@ public class GameManager : MonoBehaviour
         yield return current.Exit();
         CurrentPhase = next;
         yield return incoming.Enter();
+
+        if (_postTransitionCooldown > 0f)
+            yield return new WaitForSeconds(_postTransitionCooldown);
 
         IsTransitioning = false;
     }

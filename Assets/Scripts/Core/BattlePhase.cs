@@ -20,20 +20,27 @@ public class BattlePhase : IGamePhase
         if (_bsm != null)
         {
             _bsm.SetBattlePaused(false);
-            _bsm.SetPensActive(true);
+            // 顺序关键：
+            //   1) RestorePens 在 inactive 下只动 transform（无 warning）
+            //   2) SetActive 激活：物理引擎自动从 transform 取位置，避免第一帧闪在残留位置
+            //   3) ResetPensPhysics 在 active 下清速度、启重力
             _bsm.RestorePens(2f);
+            _bsm.SetPensActive(true);
+            _bsm.ResetPensPhysics();
         }
         yield break;
     }
 
     public IEnumerator Exit()
     {
-        // 只快照位置 + 暂停战斗逻辑；笔保持激活，交给 ShopController 让 ShopBook 物理撞飞
-        // 书到位后由 ShopController 调 SetPensActive(false) 完成清场
+        // 只快照位置 + 暂停战斗逻辑 + 启动统一的 2s 隐藏倒计时
+        // 倒计时由 BSM.HidePensAfterDelay 管，Workshop 和 Shop 两条路径时机对齐；
+        // 期间任何 SetPensActive(true) 都会自动取消倒计时（防止回战斗后被打脸）。
         if (_bsm != null)
         {
             _bsm.SnapshotPens();
             _bsm.SetBattlePaused(true);
+            _bsm.HidePensAfterDelay();
         }
         yield break;
     }

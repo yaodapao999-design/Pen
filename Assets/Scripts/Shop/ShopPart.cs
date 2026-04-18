@@ -71,6 +71,8 @@ public class ShopPart : MonoBehaviour
     private Vector3 _dragOffset;
     private Vector3 _dragTarget;
     private Coroutine _returnCo;
+    private Collider _col;
+    private readonly DragInputState _dragInput = new();
 
     public bool IsDragging => _isDragging;
 
@@ -78,6 +80,7 @@ public class ShopPart : MonoBehaviour
     {
         _rb = GetComponent<Rigidbody>();
         if (_rb == null) _rb = gameObject.AddComponent<Rigidbody>();
+        _col = GetComponent<Collider>();
         _rb.isKinematic = true;
         _rb.useGravity = false;
         _rb.interpolation = RigidbodyInterpolation.Interpolate;
@@ -106,27 +109,22 @@ public class ShopPart : MonoBehaviour
 
         if (_returnCo != null) { StopCoroutine(_returnCo); _returnCo = null; }
 
+        _dragInput.NotifyBegin();
         _isDragging = true;
-        _dragPlane = new Plane(Vector3.up, transform.position);
 
+        // 用 DragPlane 工具统一锚点（点击网格点 + 抬升），消除斜视相机视差
         var mouse = Mouse.current;
-        if (mouse != null)
-        {
-            var ray = ScreenHelper.ScreenPointToRay(_cam, mouse.position.ReadValue());
-            _dragOffset = _dragPlane.Raycast(ray, out float enter)
-                ? transform.position - ray.GetPoint(enter)
-                : Vector3.zero;
-        }
-        _dragTarget = transform.position;
+        var cursorRay = mouse != null ? ScreenHelper.ScreenPointToRay(_cam, mouse.position.ReadValue()) : default;
+        DragPlane.TryBuild(_col, transform.position, cursorRay, DragLiftHeight,
+            out _dragPlane, out _dragOffset, out var anchor);
+        _dragTarget = anchor;
 
-        // 切换到拖拽物理模式：非运动学、无重力、高阻尼
-        _rb.isKinematic = false;
+        // Kinematic 拖拽：MovePosition 对 Kinematic RB 确定性，避免阻尼+Dynamic 导致的抖动
+        _rb.isKinematic = true;
         _rb.useGravity = false;
-        _rb.linearDamping = DragDamping;
-        _rb.angularDamping = DragDamping;
+        _rb.linearDamping = 0f;
+        _rb.angularDamping = 0f;
         _rb.constraints = RigidbodyConstraints.FreezeRotation;
-        _rb.linearVelocity = Vector3.zero;
-        _rb.angularVelocity = Vector3.zero;
     }
 
     private void Update()
@@ -140,24 +138,25 @@ public class ShopPart : MonoBehaviour
         var mouse = Mouse.current;
         if (mouse == null || _cam == null) return;
 
-        if (mouse.leftButton.isPressed)
+        // 拖拽期间（无论按住还是点击切换）都让目标跟随鼠标
+        var ray = ScreenHelper.ScreenPointToRay(_cam, mouse.position.ReadValue());
+        if (_dragPlane.Raycast(ray, out float enter))
         {
-            var ray = ScreenHelper.ScreenPointToRay(_cam, mouse.position.ReadValue());
-            if (_dragPlane.Raycast(ray, out float enter))
-            {
-                Vector3 target = ray.GetPoint(enter) + _dragOffset;
-                float hover = HoverAmplitude > 0f
-                    ? Mathf.Sin(Time.time * 2f * Mathf.PI * HoverFrequency) * HoverAmplitude
-                    : 0f;
-                target.y += DragLiftHeight + hover;
-                _dragTarget = target;
-            }
-
-            if (_drawer != null) _drawer.TryAutoOpenClose(transform.position);
+            Vector3 target = ray.GetPoint(enter) + _dragOffset;
+            if (HoverAmplitude > 0f)
+                target.y += Mathf.Sin(Time.time * 2f * Mathf.PI * HoverFrequency) * HoverAmplitude;
+            _dragTarget = target;
         }
 
-        if (mouse.leftButton.wasReleasedThisFrame)
-            HandleMouseUp();
+        if (_drawer != null) _drawer.TryAutoOpenClose(transform.position);
+
+        // 统一的 hold/click/cancel 手势处理
+        var evt = _dragInput.Poll(
+            mouse.leftButton.wasPressedThisFrame,
+            mouse.leftButton.wasReleasedThisFrame,
+            mouse.rightButton.wasPressedThisFrame);
+        if (evt == DragInputState.Event.End) HandleMouseUp();
+        else if (evt == DragInputState.Event.Cancel) CancelDrag();
     }
 
     private void FixedUpdate()
@@ -212,22 +211,30 @@ public class ShopPart : MonoBehaviour
     private void HandleMouseUp()
     {
         _isDragging = false;
+        _dragInput.ForceEnd();
 
         if (_drawer != null && _drawer.IsInDropZone(transform.position))
         {
             _purchased = true;
             _onPurchased?.Invoke(this);
-            // 轻抬一下给磁吸留下落时间，然后直接切物理自由落体；XZ 方向由 FixedUpdate 磁吸拉向 DropAnchor
             transform.position += Vector3.up * PurchaseLift;
             EnablePhysicsFall();
             StartCoroutine(LandingTimeoutGuard());
-            // 销毁在真正落地后才启动（见 OnCollisionEnter / LandingTimeoutGuard 尾部）
             return;
         }
 
-        // 反悔：切回运动学 + EaseOutBack 弹回
-        _rb.linearVelocity = Vector3.zero;
-        _rb.angularVelocity = Vector3.zero;
+        // 反悔：保持 Kinematic 弹回（BeginDrag 已切 Kinematic）
+        _rb.isKinematic = true;
+        if (_returnCo != null) StopCoroutine(_returnCo);
+        _returnCo = StartCoroutine(ReturnHome());
+        if (_drawer != null) _drawer.Close();
+    }
+
+    /// <summary>右键取消：强制走反悔路径，EaseBack 回 home 位</summary>
+    private void CancelDrag()
+    {
+        _isDragging = false;
+        _dragInput.ForceEnd();
         _rb.isKinematic = true;
         if (_returnCo != null) StopCoroutine(_returnCo);
         _returnCo = StartCoroutine(ReturnHome());
