@@ -1,4 +1,6 @@
 using System.Collections;
+using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -35,6 +37,10 @@ public class ShopPart : MonoBehaviour
     [Tooltip("未拖拽时绕 Y 轴自转速度（度/秒），0 为不旋转")]
     [SerializeField] private float _displayRotationSpeed = 20f;
 
+    [Header("价格标签")]
+    [Tooltip("买不起时零件本体颜色倍率（越小越灰暗）")]
+    [SerializeField] private Color _denyTint = new Color(0.5f, 0.5f, 0.55f, 1f);
+
     [Header("购买下落")]
     [Tooltip("落入抽屉后多久销毁（让物理静置）")]
     public float FallSettleDuration = 0.8f;
@@ -60,6 +66,14 @@ public class ShopPart : MonoBehaviour
     private ShopDrawer _drawer;
     private System.Action<ShopPart> _onPurchased;
     private System.Action<ShopPart> _onLanded;
+    private System.Action<ShopPart> _onReject;
+    private System.Func<PenPartData, bool> _affordCheck;
+
+    // 价格标签 + 本体染色缓存
+    private ShopPriceTag _priceTag;
+    private readonly List<Renderer> _tintedRenderers = new List<Renderer>();
+    private MaterialPropertyBlock _mpb;
+    private bool _currentAffordable = true;
 
     private Vector3 _homePosition;
     private Quaternion _homeRotation;
@@ -71,10 +85,20 @@ public class ShopPart : MonoBehaviour
     private Vector3 _dragOffset;
     private Vector3 _dragTarget;
     private Coroutine _returnCo;
+    private Coroutine _introCo;
+    private Coroutine _rejectCo;
     private Collider _col;
     private readonly DragInputState _dragInput = new();
 
+    // 入场弹出 + 悬停反馈
+    private bool _introActive;
+    private bool _isHovered;
+    private float _hoverPhase;
+    private Vector3 _hoverOffsetVel;       // SmoothDamp 速度缓存
+    private Vector3 _currentHoverOffset;   // 当前应用的浮动偏移
+
     public bool IsDragging => _isDragging;
+    public bool IsIntroActive => _introActive;
 
     private void Awake()
     {
@@ -86,11 +110,18 @@ public class ShopPart : MonoBehaviour
         _rb.interpolation = RigidbodyInterpolation.Interpolate;
     }
 
-    /// <summary>由 ShopController 在实例化后调用</summary>
+    /// <summary>由 ShopController 在实例化后调用。
+    /// priceTagParent：价签的组织父节点（不影响世界位置）——ShopController.transform 即可。
+    /// priceTagOffset：价签相对零件 pivot 的世界偏移（X 左右 / Y 上下 / Z 桌面纵深）。
+    /// onReject：鼠标按下但买不起时触发（用于播放场景级 MMFeedback：拒绝音效 / 镜头抖等）。</summary>
     public void Init(PenPartData data, Vector3 homePos, Quaternion homeRot,
                      ShopDrawer drawer,
+                     Transform priceTagParent,
+                     Vector3 priceTagOffset,
                      System.Action<ShopPart> onPurchased,
-                     System.Action<ShopPart> onLanded = null)
+                     System.Action<ShopPart> onLanded = null,
+                     System.Func<PenPartData, bool> affordCheck = null,
+                     System.Action<ShopPart> onReject = null)
     {
         PartData = data;
         _homePosition = homePos;
@@ -98,19 +129,118 @@ public class ShopPart : MonoBehaviour
         _drawer = drawer;
         _onPurchased = onPurchased;
         _onLanded = onLanded;
+        _onReject = onReject;
+        _affordCheck = affordCheck;
         _cam = Camera.main;
+
+        CachePartRenderers();
+        if (priceTagParent != null && data != null)
+            _priceTag = ShopPriceTag.Create(priceTagParent, transform, priceTagOffset, data.BuyPrice, _cam);
+        RefreshAffordVisual();
+    }
+
+    private void OnDestroy()
+    {
+        // 若未经过购买路径销毁（如 Shop 退出时清场），兜底消掉价签
+        if (_priceTag != null) Destroy(_priceTag.gameObject);
+    }
+
+    // ─── 本体染色（价签由 ShopPriceTag 自管） ─────────────────────────────────
+
+    private void CachePartRenderers()
+    {
+        _tintedRenderers.Clear();
+        foreach (var r in GetComponentsInChildren<Renderer>(true))
+            _tintedRenderers.Add(r);
+        if (_mpb == null) _mpb = new MaterialPropertyBlock();
+    }
+
+    /// <summary>由 ShopController 在 Wallet 变化时调用，刷新价签颜色 + 本体染色。</summary>
+    public void RefreshAffordVisual()
+    {
+        if (PartData == null) return;
+        bool canAfford = _affordCheck == null || _affordCheck(PartData);
+        _currentAffordable = canAfford;
+
+        if (_priceTag != null) _priceTag.SetAffordable(canAfford);
+
+        // 本体染色：MaterialPropertyBlock 设 _BaseColor（URP/Built-in 都能识别）
+        if (_mpb == null) _mpb = new MaterialPropertyBlock();
+        Color tint = canAfford ? Color.white : _denyTint;
+        foreach (var r in _tintedRenderers)
+        {
+            if (r == null) continue;
+            r.GetPropertyBlock(_mpb);
+            _mpb.SetColor(BaseColorID, tint);
+            _mpb.SetColor(ColorID, tint);
+            r.SetPropertyBlock(_mpb);
+        }
+    }
+
+    private static readonly int BaseColorID = Shader.PropertyToID("_BaseColor");
+    private static readonly int ColorID = Shader.PropertyToID("_Color");
+
+    // ─── 入场动画 / Hover 反馈 ────────────────────────────────────────────────
+
+    /// <summary>货架弹入动画：localScale 从 0 → 1 带 EaseOutBack 回冲，旋转从随机偏角归位。</summary>
+    public void PlayIntroPopIn(float delay)
+    {
+        transform.localScale = Vector3.zero;
+        _introActive = true;
+        if (_introCo != null) StopCoroutine(_introCo);
+        _introCo = StartCoroutine(IntroRoutine(delay));
+    }
+
+    private IEnumerator IntroRoutine(float delay)
+    {
+        if (delay > 0f) yield return new WaitForSeconds(delay);
+
+        const float duration = 0.4f;
+        Quaternion fromRot = _homeRotation * Quaternion.Euler(0f, Random.Range(-25f, 25f), 0f);
+        float t = 0f;
+        while (t < 1f)
+        {
+            t += Time.deltaTime / duration;
+            float s = EaseOutBack(Mathf.Clamp01(t), 0.35f);
+            transform.localScale = Vector3.one * Mathf.Max(0f, s);
+            transform.rotation = Quaternion.SlerpUnclamped(fromRot, _homeRotation, s);
+            yield return null;
+        }
+        transform.localScale = Vector3.one;
+        transform.rotation = _homeRotation;
+        _introActive = false;
+        _introCo = null;
+    }
+
+    /// <summary>由 ShopController 每帧按射线结果调用（命中 = true，否则 = false）。</summary>
+    public void SetHover(bool hovered)
+    {
+        if (_isHovered == hovered) return;
+        _isHovered = hovered;
     }
 
     public void BeginDrag()
     {
-        if (_isDragging) return;
+        if (_isDragging || _introActive) return;
         if (_cam == null) _cam = Camera.main;
         if (_cam == null) return;
+
+        // 预购拒绝：钱不够 → 不进入拖拽，原地 shake + 价签红脉冲 + 通知控制器播全局 MMFeedback
+        if (_affordCheck != null && PartData != null && !_affordCheck(PartData))
+        {
+            if (_rejectCo != null) StopCoroutine(_rejectCo);
+            _rejectCo = StartCoroutine(RejectInPlaceShake());
+            _priceTag?.PlayRejectFlash();
+            _onReject?.Invoke(this);
+            return;
+        }
 
         if (_returnCo != null) { StopCoroutine(_returnCo); _returnCo = null; }
 
         _dragInput.NotifyBegin();
         _isDragging = true;
+
+        // 价签在 Create 时就钉死在 slot 世界位置，零件离场期间价签不动——此处无需额外操作
 
         // 用 DragPlane 工具统一锚点（点击网格点 + 抬升），消除斜视相机视差
         var mouse = Mouse.current;
@@ -131,8 +261,28 @@ public class ShopPart : MonoBehaviour
     {
         if (!_isDragging)
         {
-            if (!_purchased && _returnCo == null && _displayRotationSpeed != 0f)
-                transform.Rotate(Vector3.up, _displayRotationSpeed * Time.deltaTime, Space.World);
+            if (!_purchased && !_introActive && _returnCo == null && _rejectCo == null)
+            {
+                if (_displayRotationSpeed != 0f)
+                    transform.Rotate(Vector3.up, _displayRotationSpeed * Time.deltaTime, Space.World);
+
+                // Hover 浮动：鼠标悬停时在 home 位置上叠加一个柔和 Y bob + 细微 X/Z 漂移；
+                //   取消悬停时偏移 SmoothDamp 回零。kinematic 下直接写 transform.position 不冲突。
+                Vector3 targetOff;
+                if (_isHovered)
+                {
+                    _hoverPhase += Time.deltaTime * 4f; // ~0.64Hz
+                    float bob = Mathf.Sin(_hoverPhase) * 0.025f + 0.03f; // 悬停时整体抬一点（0.03 基底）+ 呼吸
+                    targetOff = new Vector3(0f, bob, 0f);
+                }
+                else
+                {
+                    targetOff = Vector3.zero;
+                }
+                _currentHoverOffset = Vector3.SmoothDamp(
+                    _currentHoverOffset, targetOff, ref _hoverOffsetVel, 0.12f);
+                transform.position = _homePosition + _currentHoverOffset;
+            }
             return;
         }
         var mouse = Mouse.current;
@@ -215,10 +365,22 @@ public class ShopPart : MonoBehaviour
 
         if (_drawer != null && _drawer.IsInDropZone(transform.position))
         {
+            // 钱包不够 → 拒绝购买，走"摇头 + 回弹"拒绝反馈
+            if (_affordCheck != null && !_affordCheck(PartData))
+            {
+                _rb.isKinematic = true;
+                if (_returnCo != null) StopCoroutine(_returnCo);
+                _returnCo = StartCoroutine(ReturnWithShake());
+                if (_drawer != null) _drawer.Close();
+                return;
+            }
+
             _purchased = true;
             _onPurchased?.Invoke(this);
             transform.position += Vector3.up * PurchaseLift;
             EnablePhysicsFall();
+            // 购买成交——价签在货架位淡出
+            if (_priceTag != null) _priceTag.FadeOutAndDestroy();
             StartCoroutine(LandingTimeoutGuard());
             return;
         }
@@ -228,6 +390,47 @@ public class ShopPart : MonoBehaviour
         if (_returnCo != null) StopCoroutine(_returnCo);
         _returnCo = StartCoroutine(ReturnHome());
         if (_drawer != null) _drawer.Close();
+    }
+
+    /// <summary>预购拒绝：鼠标按下时资金不够——原地抖 0.28s，不离开 home 位</summary>
+    private IEnumerator RejectInPlaceShake()
+    {
+        const float duration = 0.28f;
+        const float amplitude = 0.022f;
+        float t = 0f;
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            float decay = 1f - t / duration;
+            float sx = (Random.value * 2f - 1f) * amplitude * decay;
+            float sz = (Random.value * 2f - 1f) * amplitude * decay;
+            transform.position = _homePosition + new Vector3(sx, 0f, sz);
+            yield return null;
+        }
+        transform.position = _homePosition;
+        _rejectCo = null;
+    }
+
+    /// <summary>（旧版兜底，保留）钱不够但已拖到抽屉才检出时：原地红色 shake 半秒 → 回弹到 home 位</summary>
+    private IEnumerator ReturnWithShake()
+    {
+        const float shakeTime = 0.35f;
+        const float shakeAmplitude = 0.04f;
+        Vector3 basePos = transform.position;
+        float t = 0f;
+        while (t < shakeTime)
+        {
+            t += Time.deltaTime;
+            float decay = 1f - t / shakeTime;
+            float sx = (Random.value * 2f - 1f) * shakeAmplitude * decay;
+            float sz = (Random.value * 2f - 1f) * shakeAmplitude * decay;
+            transform.position = basePos + new Vector3(sx, 0f, sz);
+            yield return null;
+        }
+        transform.position = basePos;
+
+        // shake 完毕后正常回弹
+        yield return ReturnHome();
     }
 
     /// <summary>右键取消：强制走反悔路径，EaseBack 回 home 位</summary>

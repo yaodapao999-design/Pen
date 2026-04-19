@@ -12,7 +12,8 @@ using UnityEngine;
 [CreateAssetMenu(fileName = "PlayerInventory", menuName = "GameData/PlayerInventory")]
 public class PlayerInventory : ScriptableObject
 {
-    [Tooltip("玩家已拥有的全部零件（允许重复）")]
+    [Tooltip("运行时已拥有的全部零件 + Session Snapshot 载体。不要在此处设置起始仓库——" +
+             "GameManager.Start() 会用 PlayerLoadoutSO.InitialInventory 覆盖此列表。此字段只用于 Play 模式下观察当前库存。")]
     public List<PenPartData> OwnedParts = new List<PenPartData>();
 
     [System.NonSerialized] private List<PenPartData> _sessionSnapshot;

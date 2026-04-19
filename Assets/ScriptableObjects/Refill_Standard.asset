@@ -19,7 +19,7 @@ MonoBehaviour:
   Icon: {fileID: 0}
   PlugsInto: 6
   Mass: 0.01
-  PhysicsMaterial: {fileID: 0}
+  PhysicsMaterial: {fileID: 13400000, guid: 2ffce597b755a49b39a2192ad1452573, type: 2}
   LaunchPowerMultiplier: 1
-  BuyPrice: 0
+  BuyPrice: 10
   Effects: []

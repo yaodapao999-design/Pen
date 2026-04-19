@@ -23,7 +23,12 @@ public class PlayerLoadoutSO : ScriptableObject
     [Tooltip("起始散落在仓库里的零件（未装配，下次打开改装抽屉时以散落物形式生成）")]
     [SerializeField] private PenPartData[] _initialInventory;
 
+    [Tooltip("新存档起始金币数——唯一入口。GameManager.Start() 会 Wallet.Set() 此值到 PlayerWallet。" +
+             "在 PlayerWallet.asset 里直接改 _coins 没有意义，会被这里覆盖。")]
+    [SerializeField] private int _initialCoins = 10;
+
     public PenPartData InitialBarrel => _initialBarrel;
     public IReadOnlyList<PenPartData> InitialEquipped => _initialEquipped ?? System.Array.Empty<PenPartData>();
     public IReadOnlyList<PenPartData> InitialInventory => _initialInventory ?? System.Array.Empty<PenPartData>();
+    public int InitialCoins => _initialCoins;
 }

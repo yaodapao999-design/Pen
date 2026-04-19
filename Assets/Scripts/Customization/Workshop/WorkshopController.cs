@@ -54,6 +54,10 @@ public class WorkshopController : MonoBehaviour
     public float HoverPulseSpeed = 3f;
     public float BarrelTransparentAlpha = 0.3f;
 
+    [Header("入场动画")]
+    [Tooltip("抽屉打开到位后各零件依次弹入的间隔（秒）。0 = 所有同时")]
+    [SerializeField] private float _introStaggerDelay = 0.06f;
+
     // ─── 初始化 ───────────────────────────────────────────────────────────────
 
     private void Start()
@@ -83,6 +87,14 @@ public class WorkshopController : MonoBehaviour
 
         var cam = Camera.main;
         if (cam == null) return;
+
+        // 拖拽中：不做悬停高亮 / 不显示 PartInfoPanel——StatDelta 浮窗已经担任拖拽期间的信息来源
+        if (HasAnyDragging())
+        {
+            ClearHover();
+            PartInfoPanel.Instance?.Hide();
+            return;
+        }
 
         var ray = ScreenHelper.ScreenPointToRay(cam, mouse.position.ReadValue());
 
@@ -142,7 +154,7 @@ public class WorkshopController : MonoBehaviour
         return bestPart ?? bestBarrel;
     }
 
-    /// <summary>悬停高亮：脉冲发光 + 内部零件时笔杆变半透明</summary>
+    /// <summary>悬停高亮：脉冲发光 + 内部零件时笔杆变半透明 + 信息面板</summary>
     private void UpdateHover(WorkshopPart target)
     {
         if (target != _hoveredPart)
@@ -170,6 +182,14 @@ public class WorkshopController : MonoBehaviour
             float pulse = Mathf.PingPong(Time.time * HoverPulseSpeed, 1f);
             Color emission = Color.Lerp(HoverColorMin, HoverColorMax, pulse);
             SetEmission(_hoveredPart, emission);
+
+            // 信息面板（Workshop 不显示价格）
+            if (_hoveredPart.PartData != null)
+                PartInfoPanel.Instance?.Show(_hoveredPart.PartData, showPrice: false);
+        }
+        else
+        {
+            PartInfoPanel.Instance?.Hide();
         }
     }
 
@@ -268,6 +288,9 @@ public class WorkshopController : MonoBehaviour
         CreateWorkshopView();
         if (PenSpawner != null) PenSpawner.SpawnParts();
 
+        // 记录每个 WorkshopPart 的"目标 scale"并预先置 0，抽屉动画期间不可见（仅作为"位置载体"跟着抽屉走）
+        var partScales = CapturePartScalesAndHide();
+
         var frozenParts = FreezeLooseParts();
 
         Vector3 drawerStartPos = DrawerAnim != null ? DrawerAnim.DrawerTransform.position : Vector3.zero;
@@ -275,9 +298,12 @@ public class WorkshopController : MonoBehaviour
             yield return AnimateDrawerAndFollow(open: true, frozenParts);
         Vector3 drawerEndPos = DrawerAnim != null ? DrawerAnim.DrawerTransform.position : Vector3.zero;
 
-        // 开门到位：给散落件沿抽屉运动方向一个初速度，模拟"抽屉停下零件因惯性前冲"
+        // 开门到位：散落零件立即获得惯性初速度开始 settle（全程可见，此刻开始自然下落）
         float inertia = WorkshopConfig.Instance != null ? WorkshopConfig.Instance.DrawerOpenInertia : 0.8f;
         UnfreezeWithInertia(frozenParts, drawerEndPos - drawerStartPos, inertia);
+
+        // 紧接着触发改装台零件的错开弹入（Assembled only，不影响抽屉里正在 settle 的零件）
+        TriggerStaggerPopIn(partScales);
 
         // 抽屉打开后更新锚点（世界坐标已改变）
         var barrel = Registry?.GetAssembledBarrel();
@@ -287,11 +313,40 @@ public class WorkshopController : MonoBehaviour
         _isTransitioning = false;
     }
 
+    /// <summary>快照改装台上（Assembled）各零件的 localScale 并置零。
+    /// 抽屉散落的 Loose 零件不动 —— 抽屉滑开过程它们全程可见，由抽屉自身的运动揭示即可。</summary>
+    private List<(WorkshopPart wp, Vector3 scale)> CapturePartScalesAndHide()
+    {
+        var list = new List<(WorkshopPart, Vector3)>();
+        if (Registry == null) return list;
+        foreach (var wp in Registry.All)
+        {
+            if (wp == null) continue;
+            if (wp.State != WorkshopPart.PartState.Assembled) continue; // Loose 全程可见
+            list.Add((wp, wp.transform.localScale));
+            wp.transform.localScale = Vector3.zero;
+        }
+        return list;
+    }
+
+    /// <summary>按记录的目标 scale 触发各 WorkshopPart 的入场弹入，按索引错开。</summary>
+    private void TriggerStaggerPopIn(List<(WorkshopPart wp, Vector3 scale)> list)
+    {
+        for (int i = 0; i < list.Count; i++)
+        {
+            var (wp, scale) = list[i];
+            if (wp == null) continue;
+            wp.PlayIntroPopIn(delay: i * _introStaggerDelay, homeScale: scale);
+        }
+    }
+
     // ─── 退出改装 ─────────────────────────────────────────────────────────────
 
     private IEnumerator TransitionFromDrawer()
     {
         _isTransitioning = true;
+        ClearHover();
+        PartInfoPanel.Instance?.Hide();
 
         var frozenParts = FreezeLooseParts();
 

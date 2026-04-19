@@ -19,3 +19,4 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 5e20f679db33a4fe79b2c0edba8114ee, type: 2}
   - {fileID: 11400000, guid: 73162441abb1e4e4e95b567f56bdc341, type: 2}
   _initialInventory: []
+  _initialCoins: 15

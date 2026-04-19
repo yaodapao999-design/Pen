@@ -24,9 +24,11 @@ public class BattlePhase : IGamePhase
             //   1) RestorePens 在 inactive 下只动 transform（无 warning）
             //   2) SetActive 激活：物理引擎自动从 transform 取位置，避免第一帧闪在残留位置
             //   3) ResetPensPhysics 在 active 下清速度、启重力
+            //   4) PlayPensIntroPopIn 把 scale 从 0 弹回 1，与首次亮相一致的入场动效
             _bsm.RestorePens(2f);
             _bsm.SetPensActive(true);
             _bsm.ResetPensPhysics();
+            _bsm.PlayPensIntroPopIn();
         }
         yield break;
     }

@@ -88,18 +88,8 @@ public class IdleState : IEntityState
         }
 
         // 直接把命中世界坐标作为"将来 AddForceAtPosition 的 position 参数"
-        // 点哪里力就加在哪里，扭矩由 Unity 相对 rb.worldCenterOfMass 自动算，
-        // 不再有"胶囊末端夹死、末端视觉区无感"的死区
+        // 点哪里力就加在哪里，扭矩由 Unity 相对 rb.worldCenterOfMass 自动算
         ctx.ContactPointWorld = hit.point;
-
-        // 保留一个 offset 日志方便手感调试：−1=笔尾末端附近，+1=笔头末端附近
-        // 仅用于开发可视化，不进入物理
-        Vector3 penAxis = ctx.pen.GetPenAxis();
-        Vector3 capsuleCenterWorld = barrelCol.transform.TransformPoint(barrelCol.center);
-        float halfHeight = Mathf.Max((barrelCol.height / 2f) - barrelCol.radius, 0.001f);
-        float offsetAlong = Vector3.Dot(hit.point - capsuleCenterWorld, penAxis);
-        float offsetNormalized = offsetAlong / halfHeight; // 不再 Clamp，超出 ±1 代表点到了胶囊外的子零件视觉
-        Debug.Log($"[IdleState] 命中 {hit.collider.name} | hit.point={hit.point} | 沿轴投影={offsetAlong:F3} / halfHeight={halfHeight:F3} → 相对偏移={offsetNormalized:F2} (−1=笔尾末端, 0=几何中心, +1=笔头末端；超出 ±1 = 点到了突出的子零件)");
 
         // 开始拖拽
         isDragging = true;
@@ -127,6 +117,32 @@ public class IdleState : IEntityState
     {
         isDragging = false;
         _dragInput.ForceEnd();
+
+        float dragDistance = ctx.LaunchForce * ctx.pen.maxDragDistance;
+
+        // 把 ContactPointWorld 投到笔长轴，0 = 动态质心 (rb.worldCenterOfMass)
+        // 正值偏笔头、负值偏笔尾；单位 = 半笔长。
+        string positionLabel = "?";
+        string diagLabel = "";
+        var cap = ctx.pen.penCollider;
+        if (cap != null)
+        {
+            Vector3 axis = ctx.pen.GetPenAxis();
+            Vector3 com = ctx.pen.rb.worldCenterOfMass;
+            Vector3 geomCenter = cap.transform.TransformPoint(cap.center);
+            float halfHeight = Mathf.Max((cap.height / 2f) - cap.radius, 0.001f);
+
+            float offsetNormalized = Vector3.Dot(ctx.ContactPointWorld - com, axis) / halfHeight;
+            positionLabel = $"{offsetNormalized:+0.00;-0.00}";
+
+            // 诊断：COM 相对几何中心的偏移（单位=半笔长）；若接近 0 说明当前装配 COM 几乎在几何中心
+            float comShift = Vector3.Dot(com - geomCenter, axis) / halfHeight;
+            diagLabel = $" | COM相对几何中心={comShift:+0.00;-0.00} | mass={ctx.pen.rb.mass:F2}";
+        }
+
+        Debug.Log($"[Launch] Position={positionLabel} (0=动态质心, +偏笔头, 单位=半笔长) | " +
+                  $"DragDistance={dragDistance:F3}m | Force={ctx.LaunchForce:F2}{diagLabel}");
+
         stateMachine.ChangeState(new ActionState(stateMachine, ctx));
     }
 

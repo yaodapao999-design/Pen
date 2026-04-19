@@ -10,10 +10,10 @@ using UnityEngine;
 ///      自动选接触点那个 Collider 的材质
 ///
 /// 零件 NOT 影响的（由 PenEntity 固定，与配置无关）：
-///   - 惯性张量（旋转的"重感"）
-///   - 角向/线性阻力（停止时间）
+///   - 线性 / 角阻尼（指数衰减参数）
 ///
-/// 这样的设计让"装/卸零件"只改变重心分布和摩擦特性，旋转手感本身永远稳定一致。
+/// 惯性张量走 Unity automaticInertiaTensor（由胶囊几何 + 聚合质量自动算出真实张量 ——
+/// 长轴惯性小、短轴惯性大），装配越偏心，旋转响应越真实。
 /// </summary>
 public class PenPhysicsAggregator
 {
@@ -74,7 +74,8 @@ public class PenPhysicsAggregator
         Vector3 comWorld = massWeightedPosSumWorld / totalMass;
         _rb.centerOfMass = _rb.transform.InverseTransformPoint(comWorld);
 
-        // 注意：不碰 inertiaTensor —— 由 PenEntity.Awake 设为固定值，零件加减不影响
+        // 惯性张量：PenEntity.Awake 里 automaticInertiaTensor = true，Unity 会在下一物理步
+        // 根据 Collider + mass 自动重算。此处无需手动设置。
     }
 
     /// <summary>

@@ -34,6 +34,18 @@ public class BattleStateMachine : MonoBehaviour
 
     private Coroutine _hidePensCo;
 
+    [Header("入场动画")]
+    [Tooltip("Player 与 Enemy 入场之间的错开时长（秒）")]
+    [SerializeField] private float _introStaggerDelay = 0.1f;
+
+    private void Awake()
+    {
+        // 预置 scale=0：场景加载首帧笔不可见，等 Start 里 PlayPensIntroPopIn 把它们弹回
+        // 避免"进游戏瞬间看到全尺寸笔 → 然后被我们缩小 → 再 pop-in"的闪烁
+        if (pen != null) pen.transform.localScale = Vector3.zero;
+        if (enemyPen != null) enemyPen.transform.localScale = Vector3.zero;
+    }
+
     private void Start()
     {
         ctx = new BattleContext(pen);
@@ -41,6 +53,16 @@ public class BattleStateMachine : MonoBehaviour
         // 启动预快照：保证首次 RestorePens 有合法位置，即使从未进出过 Battle
         SnapshotPens();
         ChangeState(new IdleState(this, ctx));
+        // 首次进入战斗场景：两把笔 pop-in 入场
+        PlayPensIntroPopIn();
+    }
+
+    /// <summary>Player 与 Enemy 笔错开弹入（scale 0 → 1 EaseOutBack）。
+    /// 外层调用时机：Start 首次亮相 / BattlePhase.Enter 从 Shop/Workshop 回战斗时。</summary>
+    public void PlayPensIntroPopIn()
+    {
+        if (pen != null) IntroPopIn.PlayOn(this, pen.transform, 0f, Vector3.one);
+        if (enemyPen != null) IntroPopIn.PlayOn(this, enemyPen.transform, _introStaggerDelay, Vector3.one);
     }
 
     public void ChangeState(IEntityState newState)

@@ -42,6 +42,10 @@ public class GameManager : MonoBehaviour
     public GamePhase CurrentPhase { get; private set; } = GamePhase.Battle;
     public bool IsTransitioning { get; private set; }
 
+    /// <summary>阶段切换完成时触发（CurrentPhase 已更新，incoming.Enter 开始之前）。
+    /// UI 等订阅者可据此切换可见性 / 数据绑定。</summary>
+    public event System.Action<GamePhase> OnPhaseChanged;
+
     private IGamePhase _battle, _shop, _workshop;
 
     private void Awake()
@@ -67,6 +71,9 @@ public class GameManager : MonoBehaviour
     {
         // 所有 Awake 已完成（PenAssembly._rb、BattleSM.pen 都就绪），可安全写入 Loadout
         ApplyLoadoutOnNewSave();
+
+        // 首次广播：让 OnEnable 订阅的 UI（PhaseVisibility 等）拿到初始阶段
+        OnPhaseChanged?.Invoke(CurrentPhase);
     }
 
     /// <summary>
@@ -91,6 +98,10 @@ public class GameManager : MonoBehaviour
             foreach (var p in Loadout.InitialInventory)
                 if (p != null) Inventory.Add(p);
         }
+
+        // 1.5) 钱包：写入起始金币（Wallet 也有 session-snapshot 机制）
+        if (Wallet != null)
+            Wallet.Set(Loadout.InitialCoins);
 
         // 2) 玩家笔：写数据层 + 构建战斗视图（Start 时 PenAssembly._rb 已就绪）
         var assembly = BattleSM != null && BattleSM.Pen != null ? BattleSM.Pen.Assembly : null;
@@ -141,8 +152,24 @@ public class GameManager : MonoBehaviour
     public void OnPartPurchased(PenPartData part)
     {
         if (Inventory == null || part == null) return;
-        // 货币本阶段仅占位：若将来启用，先 Wallet.TrySpend(part.BuyPrice) 再 Add
+
+        // 先扣费。ShopPart 的 affordCheck 理论上已经保证够钱，这里再查一遍防御：
+        // 若余额不够或 Wallet 未配，依然把零件发给玩家（避免"已拖入抽屉却没到手"的空动作感）
+        if (Wallet != null && part.BuyPrice > 0)
+        {
+            if (!Wallet.TrySpend(part.BuyPrice))
+                Debug.LogWarning($"[GameManager] 钱包不足 {part.BuyPrice} 币，但物品 {part.DisplayName} 已发放——" +
+                                 " 正常情况下 ShopPart.affordCheck 会提前拦住，这里走到说明有状态不一致");
+        }
         Inventory.Add(part);
+    }
+
+    /// <summary>查询玩家是否能负担某个零件的价格（供 ShopPart 在拖入抽屉瞬间做拒绝判断）</summary>
+    public bool CanAfford(PenPartData part)
+    {
+        if (part == null) return false;
+        if (Wallet == null) return true; // 没有钱包系统 = 不约束
+        return Wallet.Coins >= part.BuyPrice;
     }
 
     // ─── 内部 ─────────────────────────────────────────────────────────────────
@@ -165,6 +192,7 @@ public class GameManager : MonoBehaviour
 
         yield return current.Exit();
         CurrentPhase = next;
+        OnPhaseChanged?.Invoke(CurrentPhase);
         yield return incoming.Enter();
 
         if (_postTransitionCooldown > 0f)

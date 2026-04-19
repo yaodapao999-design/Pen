@@ -60,6 +60,10 @@ public class WorkshopPart : MonoBehaviour
     private WorkshopPart _threattenedOccupant;
     private Vector3 _threattenedOriginalScale;
 
+    // 入场弹入
+    private bool _introActive;
+    private Coroutine _introCo;
+
     // 拖拽起始位置（笔杆回弹用）
     private Vector3 _dragStartPosition;
     private Quaternion _dragStartRotation;
@@ -123,15 +127,60 @@ public class WorkshopPart : MonoBehaviour
         WorkshopPartRegistry.Instance?.NotifyStateChanged(this);
     }
 
-    /// <summary>定向弹出（向 awayFrom 的反方向）</summary>
+    /// <summary>弹出：若有 DragArea（= 抽屉散落区），沿抛物线动画飞入抽屉中心附近；
+    /// 否则回退到基于 awayFrom 的随机方向物理冲量。</summary>
     public void Eject(Vector3 awayFrom)
     {
+        if (DragArea != null)
+        {
+            StartCoroutine(AnimateEjectToArea());
+            return;
+        }
+
         SetLoose();
         Vector3 dir = (transform.position - awayFrom).normalized;
         if (dir.sqrMagnitude < 0.01f)
             dir = new Vector3(Random.Range(-1f, 1f), 0.5f, Random.Range(-1f, 1f)).normalized;
         dir.y = Mathf.Max(dir.y, 0.3f);
         _rb.AddForce(dir * ScatterForce, ForceMode.Impulse);
+        PlaySound(EjectSound);
+    }
+
+    /// <summary>抛物线抛入抽屉：起点 = 当前位置，终点 = 抽屉中心 + 随机小偏移，
+    /// apex 抬 0.35m。动画结束后交给物理自然 settle。</summary>
+    private IEnumerator AnimateEjectToArea()
+    {
+        SetLoose();
+        _rb.isKinematic = true; // 动画期间禁用物理
+        _rb.linearVelocity = Vector3.zero;
+        _rb.angularVelocity = Vector3.zero;
+
+        Vector3 start = transform.position;
+        Vector3 center = DragArea.bounds.center;
+        Vector3 target = center + new Vector3(
+            Random.Range(-0.1f, 0.1f), 0f, Random.Range(-0.1f, 0.1f));
+        Vector3 apex = Vector3.Lerp(start, target, 0.5f) + Vector3.up * 0.35f;
+
+        const float duration = 0.55f;
+        float tumbleAxisX = Random.Range(180f, 540f);
+        float tumbleAxisZ = Random.Range(-360f, 360f);
+
+        float t = 0f;
+        while (t < 1f)
+        {
+            t += Time.deltaTime / duration;
+            float s = Mathf.Clamp01(t);
+            // Quadratic bezier
+            Vector3 a = Vector3.Lerp(start, apex, s);
+            Vector3 b = Vector3.Lerp(apex, target, s);
+            transform.position = Vector3.Lerp(a, b, s);
+            transform.Rotate(tumbleAxisX * Time.deltaTime, 0f, tumbleAxisZ * Time.deltaTime, Space.World);
+            yield return null;
+        }
+        transform.position = target;
+        _rb.isKinematic = false;
+        _rb.linearVelocity = Vector3.zero;
+        _rb.angularVelocity = Vector3.zero;
         PlaySound(EjectSound);
     }
 
@@ -197,10 +246,47 @@ public class WorkshopPart : MonoBehaviour
             _rb.MovePosition(_dragTarget);
     }
 
+    // ─── 入场 PopIn ────────────────────────────────────────────────────────────
+
+    /// <summary>Workshop 打开时的弹入动画：scale 0 → 1，EaseOutBack 回冲。</summary>
+    public void PlayIntroPopIn(float delay, Vector3 homeScale)
+    {
+        _introActive = true;
+        transform.localScale = Vector3.zero;
+        if (_introCo != null) StopCoroutine(_introCo);
+        _introCo = StartCoroutine(IntroRoutine(delay, homeScale));
+    }
+
+    private IEnumerator IntroRoutine(float delay, Vector3 homeScale)
+    {
+        if (delay > 0f) yield return new WaitForSeconds(delay);
+        const float duration = 0.38f;
+        float t = 0f;
+        while (t < 1f)
+        {
+            t += Time.deltaTime / duration;
+            float s = EaseOutBackLocal(Mathf.Clamp01(t), 0.30f);
+            transform.localScale = homeScale * Mathf.Max(0f, s);
+            yield return null;
+        }
+        transform.localScale = homeScale;
+        _introActive = false;
+        _introCo = null;
+    }
+
+    private static float EaseOutBackLocal(float x, float overshoot)
+    {
+        float c1 = 1.70158f * (overshoot / 0.25f);
+        float c3 = c1 + 1f;
+        float u = x - 1f;
+        return 1f + c3 * u * u * u + c1 * u * u;
+    }
+
     public void BeginDrag()
     {
         if (State == PartState.Snapping) return;
         if (_isDragging) return; // 防重入（点击切换模式下再点到自己）
+        if (_introActive) return; // 入场中不允许拖拽
 
         _dragInput.NotifyBegin();
 
