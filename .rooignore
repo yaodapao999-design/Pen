@@ -14,6 +14,9 @@ UserSettings/
 MemoryCaptures/
 Recordings/
 
+# --- 包管理锁文件（通常不需要让 Agent 读取） ---
+Packages/packages-lock.json
+
 # --- 二进制资源文件 ---
 *.fbx
 *.FBX
@@ -82,11 +85,7 @@ Assets/TutorialInfo/
 
 # --- IDE / 编辑器生成文件 ---
 .vs/
-.vscode/
 .idea/
-*.csproj
-*.sln
-*.slnx
 *.suo
 *.tmp
 *.user

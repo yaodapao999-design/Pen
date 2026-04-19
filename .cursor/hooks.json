@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "command": ".cursor/hooks/plan_docs_child_sync.py",
+        "matcher": "^Write$|^TabWrite$"
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": ".cursor/hooks/plan_docs_after_file_edit_audit.py",
+        "matcher": "^Write$|^TabWrite$"
+      }
+    ]
+  }
+}

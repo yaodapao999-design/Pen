@@ -1,0 +1,88 @@
+# Cursor Agent Ignore (Unity)
+#
+# 目标：
+# - 默认让 Agent 聚焦在 C# 逻辑与关键配置上
+# - 排除 Unity 生成/缓存/构建产物与大体量二进制资源，减少噪音与索引成本
+#
+# 需要排查资源引用/合并冲突时，你可以临时把下面的 *.prefab / *.unity / *.meta 规则删掉或注释掉。
+
+# --- Unity 生成目录（必须排除） ---
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+MemoryCaptures/
+Recordings/
+Packages/packages-lock.json
+
+# --- 大体量二进制资源（通常对 Agent 没价值） ---
+*.fbx
+*.FBX
+*.obj
+*.OBJ
+*.3ds
+*.3DS
+*.lxo
+*.LXO
+*.ma
+*.MA
+*.blend
+*.blend1
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.tga
+*.tif
+*.tiff
+*.psd
+*.ico
+*.bmp
+*.svg
+*.webp
+*.exr
+*.hdr
+*.cubemap
+*.wav
+*.mp3
+*.ogg
+*.aif
+*.aiff
+*.mid
+*.midi
+*.dll
+*.exe
+*.so
+*.dylib
+*.a
+*.pdb
+*.mdb
+
+# --- Unity 序列化文件（默认排除，按需放开） ---
+*.meta
+*.asset
+*.mat
+*.physicMaterial
+*.flare
+*.controller
+*.overrideController
+*.anim
+*.mask
+*.lighting
+*.giparams
+*.renderTexture
+
+# --- IDE 生成文件 ---
+.vs/
+.idea/
+
+# --- 系统/杂项 ---
+.DS_Store
+Thumbs.db
+*.log
+ServerData/
+*.unitypackage
+crashlytics-build.properties
