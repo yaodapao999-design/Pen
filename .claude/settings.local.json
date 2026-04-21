@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python .claude/hooks/plan_docs_sync.py)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(python -c ' *)",
+      "Bash(rm -f /tmp/claude-hook-check.txt)",
+      "Read(//tmp/**)",
+      "Bash(git mv *)"
+    ]
+  }
+}

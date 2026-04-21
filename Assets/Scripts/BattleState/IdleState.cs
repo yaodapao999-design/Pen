@@ -17,6 +17,9 @@ public class IdleState : IEntityState
     private Vector3 dragStartWorldPos;
     private readonly DragInputState _dragInput = new();
 
+    /// <summary>当前是否处于拖拽蓄力中(含 Holding 与 Clicked 两种手势态)。预测系统等外部观察者可读取</summary>
+    public bool IsDragging => isDragging;
+
     public IdleState(BattleStateMachine stateMachine, BattleContext ctx)
     {
         this.stateMachine = stateMachine;

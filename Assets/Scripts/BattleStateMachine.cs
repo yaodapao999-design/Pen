@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class BattleStateMachine : MonoBehaviour
@@ -19,14 +20,21 @@ public class BattleStateMachine : MonoBehaviour
 
     public Unity.Cinemachine.CinemachineCamera BattleCamera => battleCamera;
     public GameObject BattleRoot => battleRoot;
-    /// <summary>玩家笔实体（供 GameManager 等外层做 Loadout 注入、数据查询）</summary>
+    /// <summary>玩家笔实体（供 GameManager 等外层做 Loadout 注入、数据查询)</summary>
     public PenEntity Pen => pen;
+    /// <summary>敌方笔实体(供预测系统在镜像场景中装配双笔、以静态位姿同步)</summary>
+    public PenEntity EnemyPen => enemyPen;
     /// <summary>当前是否处于 Idle 状态（用于阶段切换前置校验）</summary>
     public bool IsIdle => currentState is IdleState;
+    /// <summary>当前战斗上下文；Idle 蓄力期间 LaunchDirection/Force/ContactPointWorld 由 IdleState 实时填入,预测系统等外部观察者可读取</summary>
+    public BattleContext Ctx => ctx;
+    /// <summary>当前是否处于 Idle 子状态且玩家正在拖拽蓄力(供预测系统"只在拖拽时显示"开关使用)</summary>
+    public bool IsDragging => (currentState as IdleState)?.IsDragging ?? false;
 
     private IEntityState currentState;
     private BattleContext ctx;
     private bool _paused;
+    private bool _enemyAssemblyEnsured;
 
     private bool _hasSnapshot;
     private Vector3 _penSnapPos, _enemyPenSnapPos;
@@ -75,7 +83,27 @@ public class BattleStateMachine : MonoBehaviour
     private void Update()
     {
         if (_paused) return;
+        if (!_enemyAssemblyEnsured) TryEnsureEnemyAssembly();
         currentState?.Update();
+    }
+
+    /// <summary>
+    /// 敌方笔默认只挂了视觉模型,PenAssembly 未 InitData;这里在玩家装配完成后用同一份 Loadout 补建敌方装配,
+    /// 使敌方笔在物理层面也是完整 barrel+零件(与玩家等价),才能进入镜像场景参与碰撞预测。
+    /// </summary>
+    private void TryEnsureEnemyAssembly()
+    {
+        if (enemyPen == null || enemyPen.Assembly == null) { _enemyAssemblyEnsured = true; return; }
+        if (enemyPen.Assembly.BarrelData != null) { _enemyAssemblyEnsured = true; return; }
+        if (pen == null || pen.Assembly == null || pen.Assembly.BarrelData == null) return;
+
+        var parts = new List<PenAssembly.PartEntry>(pen.Assembly.AssembledParts.Count);
+        for (int i = 0; i < pen.Assembly.AssembledParts.Count; i++)
+            parts.Add(pen.Assembly.AssembledParts[i]);
+        enemyPen.Assembly.SetData(pen.Assembly.BarrelData, parts);
+        enemyPen.Assembly.BuildBattleView();
+        _enemyAssemblyEnsured = true;
+        Debug.Log("[BattleStateMachine] 敌方笔用玩家默认装配补建完成(TryEnsureEnemyAssembly)");
     }
 
     // ─── 场景层：供 BattlePhase 调用 ──────────────────────────────────────────
