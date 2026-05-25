@@ -25,10 +25,14 @@ public class BattlePhase : IGamePhase
             //   2) SetActive 激活：物理引擎自动从 transform 取位置，避免第一帧闪在残留位置
             //   3) ResetPensPhysics 在 active 下清速度、启重力
             //   4) PlayPensIntroPopIn 把 scale 从 0 弹回 1，与首次亮相一致的入场动效
+            //   5) RestartIdleState：强制 IdleState 重跑 Enter —— Workshop 重建了 pen 的
+            //      子节点，IdleState 内部缓存（_interactor 等）在此时刷新，防御跨阶段
+            //      任何可能的引用失效。
             _bsm.RestorePens(2f);
             _bsm.SetPensActive(true);
             _bsm.ResetPensPhysics();
             _bsm.PlayPensIntroPopIn();
+            _bsm.RestartIdleState();
         }
         yield break;
     }

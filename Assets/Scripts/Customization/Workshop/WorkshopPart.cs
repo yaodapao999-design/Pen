@@ -91,6 +91,13 @@ public class WorkshopPart : MonoBehaviour
     private void OnEnable() => WorkshopPartRegistry.Instance?.Register(this);
     private void OnDisable() => WorkshopPartRegistry.Instance?.Unregister(this);
 
+    private void OnDestroy()
+    {
+        // _introCo 由 PlayIntroPopIn 启动；若 part 在 pop-in 进行中被 Destroy（Workshop 退出 /
+        // 装配替换），未停的协程会抛 MissingReferenceException。显式停一下兜底。
+        if (_introCo != null) StopCoroutine(_introCo);
+    }
+
     // ─── 公共 API ─────────────────────────────────────────────────────────────
 
     public void SetSlotAnchor(Vector3 position, Quaternion rotation)

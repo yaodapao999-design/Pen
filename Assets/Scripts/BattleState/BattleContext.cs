@@ -3,7 +3,13 @@ using UnityEngine;
 public class BattleContext
 {
     public PenEntity pen { get; private set; }
-    public PenEntity enemyPen { get; set; }
+    public PenEntity PlayerPen => pen;
+    public PenEntity EnemyPen { get; set; }
+    public PenEntity enemyPen
+    {
+        get => EnemyPen;
+        set => EnemyPen = value;
+    }
 
     public Vector3 LaunchDirection { get; set; }
     public float LaunchForce { get; set; }
@@ -14,16 +20,36 @@ public class BattleContext
     /// </summary>
     public Vector3 ContactPointWorld { get; set; }
 
-    public BattleContext(PenEntity pen)
+    /// <summary>
+    /// 玩家瞄准事件通道。IdleState 在拖拽生命周期各点发事件，视觉/反馈层作为订阅者响应。
+    /// 由 BattleStateMachine 序列化后在 Start 里注入。
+    /// </summary>
+    public AimPhaseChannelSO AimChannel { get; set; }
+
+    public bool HasEnemy => EnemyPen != null;
+    public bool PlayerHasFallen => pen != null && pen.HasFallen;
+    public bool EnemyHasFallen => EnemyPen != null && EnemyPen.HasFallen;
+    public bool AnyPenFallen => PlayerHasFallen || EnemyHasFallen;
+
+    public float StopCheckDelay
+    {
+        get
+        {
+            float delay = pen != null ? pen.stopCheckDelay : 0f;
+            if (EnemyPen != null) delay = Mathf.Max(delay, EnemyPen.stopCheckDelay);
+            return delay;
+        }
+    }
+
+    public BattleContext(PenEntity pen, PenEntity enemyPen = null)
     {
         this.pen = pen;
+        EnemyPen = enemyPen;
+    }
+
+    public void StopAllPens()
+    {
+        if (pen != null) pen.Stop();
+        if (EnemyPen != null) EnemyPen.Stop();
     }
 }
-
-public enum BattleResult
-{
-    PlayerWin,
-    EnemyWin,
-    Draw
-}
-    

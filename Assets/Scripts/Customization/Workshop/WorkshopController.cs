@@ -70,7 +70,10 @@ public class WorkshopController : MonoBehaviour
         }
 
         if (DrawerVCam != null) DrawerVCam.Priority = 0;
-        _brain = Camera.main.GetComponent<CinemachineBrain>();
+        // Camera.main 在场景刚加载、相机切换或 MainCamera tag 缺失时可能为 null；
+        // _brain 仅用来读 DefaultBlend.Time，null 时 GetBlendDuration 走 fallback 1f
+        var mainCam = Camera.main;
+        _brain = mainCam != null ? mainCam.GetComponent<CinemachineBrain>() : null;
         if (CurrentPen != null) _penRb = CurrentPen.GetComponent<Rigidbody>();
 
         // 笔的初始装配（Barrel + Equipped）和战斗视图由 GameManager.ApplyLoadoutOnNewSave 统一处理

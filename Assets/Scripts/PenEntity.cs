@@ -4,37 +4,34 @@ using UnityEngine.Serialization;
 /// <summary>
 /// 笔的物理本体。
 ///
-/// 设计原则：让 Unity 物理引擎做它擅长的事，本类只做玩法入口 + 装配无关的全局调参。
-///   - mass / centerOfMass / PhysicMaterial 由 <see cref="PenPhysicsAggregator"/> 从装配数据聚合
-///   - inertiaTensor 由 Unity 根据 Collider 几何 + 质量分布自动算（长轴惯性小、短轴大，符合笔的真实物理）
-///   - 减速只靠桌面 PhysicMaterial 摩擦，不加任何空气阻力式的指数衰减（真实世界里笔在桌上就是这样）
-///   - 发射用 ForceMode.Impulse：冲量守恒，重笔起步慢、碰撞动量大
-///
-/// 这样的设计让"装配越重 = 碰撞动量越大、姿态越稳"（而不是"越慢越拖沓"），
-/// 玩家换装能真实感知到每个零件的影响。
+/// 设计原则（冰球式俯视物理）：
+///   - Rigidbody.constraints 锁 X+Z 两轴 pitch/roll，只保留 Y yaw：笔在桌上只会滑+转，
+///     不会翻/立起来/卷滚（没有这个约束，偏心冲量或飞出桌后会让笔翻滚）。
+///   - mass / centerOfMass / inertiaTensor / PhysicsMaterial 由 <see cref="PenPhysicsAggregator"/>
+///     从装配数据聚合
+///   - 空中零阻尼，减速靠桌面 PhysicsMaterial 摩擦
+///   - 发射用"速度驱动的冲量"：Impulse = direction × maxLaunchVelocity × mass × force × 装配加成
+///     → 所有质量的笔在满拖时都以相同的速度离手（手感公平）
+///     → 重笔动量大（撞对手推得远）、轻笔动量小（撞对手推不动）
+///     这是所有俯视动量撞击游戏（冰壶、Beer Pong、俄罗斯台球）的标准做法
 /// </summary>
 public class PenEntity : MonoBehaviour
 {
     // ─── 弹射参数 ────────────────────────────────────────────────────────────
     [Header("弹射参数")]
 
-    [Tooltip("满拖时施加的冲量 (N·s = kg·m/s)。Impulse 模式 ⇒ 速度 = 冲量 / 总质量。\n" +
-             "重笔同冲量下更慢但动量更大（碰撞顶敌更远）。典型范围 3-12。\n" +
-             "实际冲量 = maxLaunchImpulse × dragForce × 装配 LaunchMultiplier 聚合")]
+    [Tooltip("满拖时笔的离手速度 (m/s)。\n" +
+             "这是速度而不是冲量：冲量 = v × mass × force × 装配加成，使所有质量的笔都以此速度离手。\n" +
+             "典型范围 6-12。桌面 8m 宽时，v=8.5 给满拖约 2.9m 行程。")]
     [FormerlySerializedAs("baseForce")]
     [FormerlySerializedAs("maxLaunchSpeed")]
-    public float maxLaunchImpulse = 5f;
+    [FormerlySerializedAs("maxLaunchImpulse")]
+    public float maxLaunchVelocity = 8.5f;
 
     [Tooltip("玩家拖拽多远算'满拖'(世界单位 m)。按桌面大小设：\n" +
              "桌子 1m 宽建议 0.3；桌子 3m 宽建议 1.0。\n" +
              "拖拽距离 / 这个值 = dragForce ∈ [0, 1]")]
     public float maxDragDistance = 2.0f;
-
-    [Tooltip("拖点偏离 COM 产生的旋转响应系数 ∈ [0, 1]。\n" +
-             "0 = 任何点都当作点 COM（纯平移无自旋）；1 = 完全真实物理（末端点击 = 陀螺爆炸）。\n" +
-             "0.3 起步：保留'点末端会转'的直觉，但角速度压在可控范围内。")]
-    [Range(0f, 1f)]
-    public float spinResponseFactor = 0.3f;
 
     // ─── 停止检测阈值（一般不用调） ──────────────────────────────────────────
     [Header("停止检测")]
@@ -60,50 +57,66 @@ public class PenEntity : MonoBehaviour
     public PenAssembly Assembly { get; private set; }
     public bool HasFallen => rb != null && rb.position.y < fallYThreshold;
 
+    /// <summary>
+    /// 发射瞬间事件，参数 force ∈ [0,1]。供反馈层订阅（PenLaunchFeedback 等），
+    /// 把"发射时刻"变成一级事件，避免把手感层硬编码进 PenEntity。
+    /// </summary>
+    public event System.Action<float> OnLaunched;
+
     private void Awake()
     {
         rb = GetComponent<Rigidbody>();
         Assembly = GetComponent<PenAssembly>();
 
-        // 空中无阻尼，减速全交给桌面摩擦
+        // 空中无阻尼，减速全交给桌面摩擦 + PenTableStability
         rb.linearDamping = 0f;
         rb.angularDamping = 0f;
 
-        // 惯性张量让 Unity 根据 Collider 几何 + 聚合质量自动算 ——
-        // 胶囊笔杆天然得到"长轴惯性小、短轴惯性大"的真实张量
-        rb.automaticInertiaTensor = true;
+        // 惯性张量：走 Unity 自动计算作为默认安全网。
+        // 当 PenPhysicsAggregator.Recalculate 被调用时（有完整装配数据），
+        // 它会自己把 automaticInertiaTensor=false 并写入手算张量。
+        // 对于没装配数据的裸笔（Enemy 占位），这里保留 auto=true 才有合理张量。
+        // rb.automaticInertiaTensor 不强制覆写
     }
 
     /// <summary>
-    /// 施加弹射。ForceMode.Impulse ⇒ 冲量守恒（v = J/m），重笔起步慢但动量大。
-    /// 偏心施力产生绕 COM 的旋转，强度由 spinResponseFactor 缩放：
-    /// 真实 r = contactPoint − COM；实际力臂 = 真实 r × spinResponseFactor，并钳制在半胶囊长度内
-    /// 以防点到凸出子零件时 r 过大导致自旋爆炸。
+    /// 施加弹射。速度驱动（冲量 = direction × velocity × mass × force × 装配加成）：
+    /// 所有质量的笔在同 force 下都以相同速度离手，但重笔带着更大动量（撞对手推得远）。
+    /// AddForceAtPosition 用有效施力点算偏心扭矩（yaw 由 Y 轴自由度承接）。
     /// </summary>
     public void Launch(Vector3 direction, float force, Vector3 contactPointWorld)
     {
         rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
 
+        Vector3 impulse = direction * (EstimateLaunchVelocity(force) * rb.mass);
+
+        rb.AddForceAtPosition(impulse, GetEffectiveLaunchContactPoint(contactPointWorld), ForceMode.Impulse);
+
+        OnLaunched?.Invoke(force);
+    }
+
+    /// <summary>
+    /// 战斗是俯视桌面物理：玩家点的是笔表面，但有效扭矩应该来自水平平面里的偏心量。
+    /// 把施力点投到当前 COM 高度，保留 XZ 偏移产生的 yaw，滤掉表面高度带来的 pitch/roll 噪声。
+    /// 真实发射和预测轨迹必须共用这个点，玩家才会逐渐信任预判线。
+    /// </summary>
+    public Vector3 GetEffectiveLaunchContactPoint(Vector3 contactPointWorld)
+    {
+        if (rb == null)
+            return contactPointWorld;
+
+        contactPointWorld.y = rb.worldCenterOfMass.y;
+        return contactPointWorld;
+    }
+
+    /// <summary>
+    /// 当前装配和力度下的离手速度。真实发射和预测轨迹共用，避免调参后两边漂移。
+    /// </summary>
+    public float EstimateLaunchVelocity(float force)
+    {
         float launchMultiplier = Assembly != null ? Assembly.GetLaunchMultiplier() : 1f;
-        Vector3 impulse = direction * (maxLaunchImpulse * force * launchMultiplier);
-
-        // 有效力臂：先剥掉垂直分量（俯视角点中笔上表面会带 ~radius 的 Y 偏移，
-        // 配合胶囊极小的长轴惯性张量会让笔绕自身长轴疯转，吃掉发射动能），
-        // 再按系数缩放，再钳制到半胶囊长度
-        Vector3 comWorld = rb.worldCenterOfMass;
-        Vector3 offset = contactPointWorld - comWorld;
-        offset.y = 0f;
-        offset *= spinResponseFactor;
-        CapsuleCollider cap = penCollider;
-        if (cap != null)
-        {
-            float halfLen = cap.height * 0.5f;
-            offset = Vector3.ClampMagnitude(offset, halfLen);
-        }
-        Vector3 effectiveContact = comWorld + offset;
-
-        rb.AddForceAtPosition(impulse, effectiveContact, ForceMode.Impulse);
+        return maxLaunchVelocity * Mathf.Clamp01(force) * launchMultiplier;
     }
 
     /// <summary>是否已停稳</summary>

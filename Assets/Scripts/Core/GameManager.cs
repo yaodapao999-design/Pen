@@ -154,12 +154,15 @@ public class GameManager : MonoBehaviour
         if (Inventory == null || part == null) return;
 
         // 先扣费。ShopPart 的 affordCheck 理论上已经保证够钱，这里再查一遍防御：
-        // 若余额不够或 Wallet 未配，依然把零件发给玩家（避免"已拖入抽屉却没到手"的空动作感）
+        // 若余额不够，拒绝发放，避免扣费失败但库存增加。
         if (Wallet != null && part.BuyPrice > 0)
         {
             if (!Wallet.TrySpend(part.BuyPrice))
-                Debug.LogWarning($"[GameManager] 钱包不足 {part.BuyPrice} 币，但物品 {part.DisplayName} 已发放——" +
-                                 " 正常情况下 ShopPart.affordCheck 会提前拦住，这里走到说明有状态不一致");
+            {
+                Debug.LogWarning($"[GameManager] 钱包不足 {part.BuyPrice} 币，未发放物品 {part.DisplayName}。 " +
+                                 "正常情况下 ShopPart.affordCheck 会提前拦住，这里走到说明有状态不一致");
+                return;
+            }
         }
         Inventory.Add(part);
     }
@@ -184,21 +187,27 @@ public class GameManager : MonoBehaviour
         var incoming = GetPhase(next);
 
         IsTransitioning = true;
+        // try/finally 保证：无论协程内 Exit/Enter 抛异常，IsTransitioning 都会复位。
+        // 否则一次异常会让 ChangePhase 永远拒绝后续切换（玩家以为按钮坏了）
+        try
+        {
+            // 镜头：切换开始瞬间同时抬新压旧，让 Cinemachine 在 Exit 动画期间直接 blend，
+            // 不会经过"默认镜头"这个中间态
+            if (incoming.Camera != null) incoming.Camera.Priority = ACTIVE_CAM_PRIORITY;
+            if (current.Camera != null) current.Camera.Priority = INACTIVE_CAM_PRIORITY;
 
-        // 镜头：切换开始瞬间同时抬新压旧，让 Cinemachine 在 Exit 动画期间直接 blend，
-        // 不会经过"默认镜头"这个中间态
-        if (incoming.Camera != null) incoming.Camera.Priority = ACTIVE_CAM_PRIORITY;
-        if (current.Camera != null) current.Camera.Priority = INACTIVE_CAM_PRIORITY;
+            yield return current.Exit();
+            CurrentPhase = next;
+            OnPhaseChanged?.Invoke(CurrentPhase);
+            yield return incoming.Enter();
 
-        yield return current.Exit();
-        CurrentPhase = next;
-        OnPhaseChanged?.Invoke(CurrentPhase);
-        yield return incoming.Enter();
-
-        if (_postTransitionCooldown > 0f)
-            yield return new WaitForSeconds(_postTransitionCooldown);
-
-        IsTransitioning = false;
+            if (_postTransitionCooldown > 0f)
+                yield return new WaitForSeconds(_postTransitionCooldown);
+        }
+        finally
+        {
+            IsTransitioning = false;
+        }
     }
 
     private IGamePhase GetPhase(GamePhase p) => p switch

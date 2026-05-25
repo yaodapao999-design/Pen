@@ -51,6 +51,10 @@ public class PenAssembly : MonoBehaviour
     private readonly List<PenPartInstance> _battleParts = new();
     private PenPhysicsAggregator _aggregator;
     private Rigidbody _rb;
+    // 上帧 lossyScale，用于检测 pop-in / 其他 scale 动画后重算 inertiaTensor
+    // （inertiaTensor 在 Aggregator 里按 scale 手算，scale 变了必须刷新，否则 pop-in
+    // 未结束就 Launch 会用"零尺寸张量"导致笔爆飞）
+    private Vector3 _lastAggregatedScale;
 
     public CapsuleCollider BarrelCollider { get; private set; }
     public IReadOnlyList<PenPartInstance> BattleParts => _battleParts;
@@ -174,6 +178,19 @@ public class PenAssembly : MonoBehaviour
     {
         if (_aggregator == null) return;
         _aggregator.Recalculate(BarrelData, _battleParts);
+        _lastAggregatedScale = transform.lossyScale;
+    }
+
+    /// <summary>
+    /// pop-in 或其他 scale 动画期间，聚合出的 inertiaTensor 是按动画中 scale 算的，
+    /// scale 变到 1 之后张量跟不上物理形状。监听 scale 变化，每次超出阈值就刷新一次。
+    /// </summary>
+    private void LateUpdate()
+    {
+        if (_aggregator == null) return;
+        Vector3 s = transform.lossyScale;
+        if ((s - _lastAggregatedScale).sqrMagnitude > 1e-4f)
+            RefreshPhysics();
     }
 
     public float GetLaunchMultiplier()
