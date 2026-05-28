@@ -147,15 +147,21 @@ public class PartInfoPanel : MonoBehaviour
 
     private static string FormatEffects(PenPartData d)
     {
-        if (d.Effects == null || d.Effects.Length == 0) return "";
         var sb = new System.Text.StringBuilder();
+        if (!string.IsNullOrWhiteSpace(d.Description))
+            sb.Append(d.Description);
+
+        if (d.Effects == null || d.Effects.Length == 0) return sb.ToString();
+
         for (int i = 0; i < d.Effects.Length; i++)
         {
             var e = d.Effects[i];
             if (e == null) continue;
             if (sb.Length > 0) sb.Append('\n');
-            // 优先用 Effect SO 的 name；PenPartEffect 未来可以加 DisplayName/Description 字段
-            sb.Append("• ").Append(e.name);
+            string label = !string.IsNullOrWhiteSpace(e.DisplayName) ? e.DisplayName : e.name;
+            sb.Append("• ").Append(label);
+            if (!string.IsNullOrWhiteSpace(e.Description))
+                sb.Append("：").Append(e.Description);
         }
         return sb.ToString();
     }

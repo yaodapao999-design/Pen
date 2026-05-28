@@ -1,0 +1,58 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5f39a73092285458590d6cbe0e910fef, type: 3}
+  m_Name: 墨渍
+  m_EditorClassIdentifier: Assembly-CSharp::SlickOilTrailEffect
+  DisplayName: "墨渍"
+  Description: "敌笔踩上会打滑，墨迹下回合淡出。"
+  PatchRadius: 0.44
+  SpawnDistance: 0.23
+  MinSpeed: 0.2
+  TrailDuration: 3.8
+  PatchLifetime: 8.5
+  MaxPatchCount: 26
+  LowFrictionMaterial: {fileID: 13400000, guid: 464e88fdbe2a945cc9cb6c66ca79e2d2, type: 2}
+  FrictionDebuffDuration: 1.15
+  OwnerGraceTime: 1.05
+  OwnerFrictionDurationMultiplier: 0
+  WaterNormalTexture: {fileID: 2800000, guid: 8af04030e5991466396700a12aa83995, type: 3}
+  SecondNormalTexture: {fileID: 2800000, guid: 8af04030e5991466396700a12aa83995, type: 3}
+  FoamTexture: {fileID: 2800000, guid: 8c4b395dedabd4c2b98a9c12061a9d35, type: 3}
+  WaterShallowColor: {r: 0.08, g: 0.42, b: 0.31, a: 0.94}
+  WaterDeepColor: {r: 0.012, g: 0.07, b: 0.052, a: 0.98}
+  WaterFoamColor: {r: 0.58, g: 1, b: 0.74, a: 0.22}
+  FoamScale: 3.4
+  MainNormalScale: {x: 0.95, y: 0.95}
+  SecondNormalScale: {x: 1.65, y: 1.65}
+  WaveDirection: {x: 1, y: 0.55}
+  WaveSpeed: 0.22
+  Smoothness: 0.95
+  SplatEdgeBump: 0.62
+  SplatTileBump: 0.48
+  LiquidThinFilmStrength: 0.025
+  LiquidSpecularIntensity: 0.9
+  LiquidHighlightStrength: 0.46
+  PixelBlockWorldSize: 0.055
+  PixelDitherStrength: 0.45
+  PixelHighlightFps: 6
+  SplatMapResolution: 1024
+  SplatStampScale: 1
+  SplatMapOpacity: 0.86
+  SplatSatelliteCount: 4
+  SplatEdgeKeepoutWidth: 0.24
+  SplatEdgeKeepoutNoise: 0.09
+  SplatEdgeKeepoutFeather: 0.1
+  SplatEdgeFlowDepth: 0
+  SplatEdgeFlowOpacity: 0
+  SplatLifetimeRounds: 1
+  SplatRoundFadeDuration: 1.35
+  SplatSurfaceOffset: 0.018

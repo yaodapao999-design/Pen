@@ -49,6 +49,7 @@ public class PenTableStability : MonoBehaviour
 
     private void FixedUpdate()
     {
+        if (_rb == null || _rb.isKinematic) return;
         if (supportSurface == null) return;
         Bounds tb = supportSurface.bounds;
         Vector3 com = _rb.worldCenterOfMass;

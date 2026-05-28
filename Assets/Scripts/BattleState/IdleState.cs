@@ -34,6 +34,14 @@ public class IdleState : IEntityState
     /// 世界空间死区，防止鼠标轻微抖动被读成发射。和 MIN_LAUNCH_FORCE 取较大者。
     /// </summary>
     private const float DEAD_ZONE_WORLD = 0.08f;
+    /// <summary>
+    /// 满拉后进入输入稳定模式。此时鼠标半径被 maxDrag 截断，细小屏幕抖动主要表现为角度噪声。
+    /// </summary>
+    private const float FULL_PULL_STABILITY_FORCE = 0.96f;
+    private const float FULL_PULL_DIRECTION_DEADBAND_DEGREES = 2.0f;
+    private const float FULL_PULL_DIRECTION_FOLLOW_DEGREES_PER_SECOND = 120f;
+    private const float FULL_PULL_PREDICTION_REUSE_ANGLE_DEGREES = 0.25f;
+    private const float FULL_PULL_PREDICTION_REUSE_CONTACT_DISTANCE = 0.025f;
 
     private readonly BattleStateMachine stateMachine;
     private readonly BattleContext ctx;
@@ -49,9 +57,16 @@ public class IdleState : IEntityState
 
     /// <summary>
     /// 预测轨迹复用 buffer —— 避免每帧 new List 产生 GC。
-    /// 容量 32 足够 25 步模拟（预测器最多 25 个采样）。
+    /// 容量只是初始值；预测器会按当前物理轨迹追加需要的采样点。
     /// </summary>
     private readonly List<Vector3> _trajectoryBuffer = new List<Vector3>(32);
+    private readonly List<Vector3> _predictionCache = new List<Vector3>(32);
+    private bool _hasStableLaunchDirection;
+    private Vector3 _stableLaunchDirection;
+    private bool _hasPredictionCache;
+    private Vector3 _cachedPredictionDirection;
+    private Vector3 _cachedPredictionContact;
+    private float _cachedPredictionForce;
 
     public IdleState(BattleStateMachine stateMachine, BattleContext ctx)
     {
@@ -65,14 +80,12 @@ public class IdleState : IEntityState
     {
         isDragging = false;
         _dragInput.ForceEnd();
+        ResetAimStability();
         // 战斗只使用"按住拖拽，松手释放"。点击切换适合改装/商店拖零件，不适合弹笔瞄准。
         _dragInput.HoldThreshold = 0f;
         _interactor = ctx.pen != null ? ctx.pen.GetComponent<PenDragInteractor>() : null;
         _comVisualizer = ctx.pen != null ? ctx.pen.GetComponent<PenCOMVisualizer>() : null;
         _comVisualizer?.EndAimVisualization();
-        Debug.Log("[IdleState/debug] Enter | pen active=" + (ctx.pen != null ? ctx.pen.gameObject.activeInHierarchy.ToString() : "?") +
-                  " penCollider=" + (ctx.pen != null && ctx.pen.penCollider != null ? ctx.pen.penCollider.name : "null") +
-                  " interactor=" + (_interactor == null ? "null(fallback)" : "ok"));
     }
 
     /// <summary>
@@ -114,6 +127,7 @@ public class IdleState : IEntityState
     {
         // 状态切换中途若残留在拖拽，兜底广播取消（视觉订阅者会收尾）
         if (isDragging) ctx.AimChannel?.RaiseCancelled();
+        ResetAimStability();
         _comVisualizer?.EndAimVisualization();
     }
 
@@ -122,15 +136,15 @@ public class IdleState : IEntityState
     private void TryStartDrag(Vector2 screenPos)
     {
         RefreshInteractorCache(); // 防御：每次点击前确保 interactor 引用有效
-        if (isDragging) { Debug.Log("[IdleState/debug] 已在拖拽，忽略"); return; }
+        if (isDragging) return;
         if (ctx.pen == null)
         {
-            Debug.LogWarning("[IdleState/debug] ctx.pen 为 null");
+            Debug.LogWarning("[IdleState] ctx.pen 为 null，无法开始拖拽。");
             return;
         }
         if (ctx.pen.penCollider == null)
         {
-            Debug.LogWarning("[IdleState/debug] penCollider 为 null ← BuildBattleView 未正确重建 BarrelCollider | " +
+            Debug.LogWarning("[IdleState] penCollider 为 null，无法开始拖拽。BuildBattleView 可能没有正确重建 BarrelCollider | " +
                              "pen active=" + ctx.pen.gameObject.activeInHierarchy +
                              " Assembly=" + (ctx.pen.Assembly == null ? "null" : "ok") +
                              " Assembly.BarrelCollider=" + (ctx.pen.Assembly == null ? "?" : (ctx.pen.Assembly.BarrelCollider == null ? "null" : "ok")));
@@ -140,7 +154,7 @@ public class IdleState : IEntityState
         Camera cam = Camera.main;
         if (cam == null)
         {
-            Debug.LogWarning("[IdleState/debug] Camera.main 为 null");
+            Debug.LogWarning("[IdleState] Camera.main 为 null，无法开始拖拽。");
             return;
         }
         var ray = ScreenHelper.ScreenPointToRay(cam, screenPos);
@@ -150,17 +164,11 @@ public class IdleState : IEntityState
             ? _interactor.TryHit(cam, screenPos, ray, out contactPoint)
             : LegacyRaycastHit(ray, out contactPoint);
 
-        if (!hit)
-        {
-            Debug.Log("[IdleState/debug] 点击未命中 pen | screenPos=" + screenPos +
-                      " ray.origin=" + ray.origin.ToString("F2") + " dir=" + ray.direction.ToString("F2") +
-                      " interactor=" + (_interactor == null ? "null(fallback)" : "ok"));
-            return;
-        }
-        Debug.Log("[IdleState/debug] Drag BEGIN @ " + contactPoint.ToString("F3"));
+        if (!hit) return;
 
         ctx.ContactPointWorld = contactPoint;
         dragPlaneReference = contactPoint;
+        ResetAimStability();
 
         isDragging = true;
         _dragInput.NotifyBegin();
@@ -189,7 +197,8 @@ public class IdleState : IEntityState
         float minLaunchForce = GetMinLaunchForce(maxDrag);
         bool isArmed = rawForce >= minLaunchForce && dragVector.sqrMagnitude > 0.0001f;
 
-        ctx.LaunchDirection = isArmed ? -dragVector.normalized : Vector3.zero;
+        Vector3 targetLaunchDirection = isArmed ? -dragVector.normalized : Vector3.zero;
+        ctx.LaunchDirection = isArmed ? StabilizeLaunchDirection(targetLaunchDirection, rawForce) : Vector3.zero;
         ctx.LaunchForce = isArmed ? rawForce : 0f;
 
         Vector3 dragEnd = ctx.ContactPointWorld + dragVector;
@@ -252,6 +261,13 @@ public class IdleState : IEntityState
         if (!isArmed || pen == null || rb == null || ctx.LaunchDirection.sqrMagnitude < 0.0001f)
         {
             _trajectoryBuffer.Clear();
+            ClearPredictionCache();
+            return;
+        }
+
+        if (CanReusePrediction(force))
+        {
+            CopyTrajectory(_predictionCache, _trajectoryBuffer);
             return;
         }
 
@@ -261,6 +277,89 @@ public class IdleState : IEntityState
             launchDir: ctx.LaunchDirection,
             force: force,
             output: _trajectoryBuffer);
+        UpdatePredictionCache(force);
+    }
+
+    private Vector3 StabilizeLaunchDirection(Vector3 targetDirection, float force)
+    {
+        targetDirection.y = 0f;
+        if (targetDirection.sqrMagnitude <= 1e-6f)
+            return Vector3.zero;
+        targetDirection.Normalize();
+
+        if (force < FULL_PULL_STABILITY_FORCE)
+        {
+            _hasStableLaunchDirection = false;
+            _stableLaunchDirection = targetDirection;
+            return targetDirection;
+        }
+
+        if (!_hasStableLaunchDirection || _stableLaunchDirection.sqrMagnitude <= 1e-6f)
+        {
+            _stableLaunchDirection = targetDirection;
+            _hasStableLaunchDirection = true;
+            return targetDirection;
+        }
+
+        float angle = Vector3.Angle(_stableLaunchDirection, targetDirection);
+        if (angle <= FULL_PULL_DIRECTION_DEADBAND_DEGREES)
+            return _stableLaunchDirection;
+
+        float maxStep = FULL_PULL_DIRECTION_FOLLOW_DEGREES_PER_SECOND * Time.deltaTime;
+        float stepDegrees = Mathf.Min(Mathf.Max(0f, angle - FULL_PULL_DIRECTION_DEADBAND_DEGREES), maxStep);
+        _stableLaunchDirection = Vector3.RotateTowards(
+            _stableLaunchDirection,
+            targetDirection,
+            stepDegrees * Mathf.Deg2Rad,
+            0f).normalized;
+        return _stableLaunchDirection;
+    }
+
+    private bool CanReusePrediction(float force)
+    {
+        if (!_hasPredictionCache || _predictionCache.Count < 2 || force < FULL_PULL_STABILITY_FORCE)
+            return false;
+        if (Mathf.Abs(force - _cachedPredictionForce) > 0.0025f)
+            return false;
+
+        Vector3 contact = ctx.ContactPointWorld;
+        Vector3 cachedContact = _cachedPredictionContact;
+        contact.y = 0f;
+        cachedContact.y = 0f;
+        if (Vector3.Distance(contact, cachedContact) > FULL_PULL_PREDICTION_REUSE_CONTACT_DISTANCE)
+            return false;
+
+        return Vector3.Angle(_cachedPredictionDirection, ctx.LaunchDirection) <= FULL_PULL_PREDICTION_REUSE_ANGLE_DEGREES;
+    }
+
+    private void UpdatePredictionCache(float force)
+    {
+        CopyTrajectory(_trajectoryBuffer, _predictionCache);
+        _cachedPredictionDirection = ctx.LaunchDirection;
+        _cachedPredictionContact = ctx.ContactPointWorld;
+        _cachedPredictionForce = force;
+        _hasPredictionCache = _predictionCache.Count >= 2;
+    }
+
+    private void ClearPredictionCache()
+    {
+        _predictionCache.Clear();
+        _hasPredictionCache = false;
+    }
+
+    private void ResetAimStability()
+    {
+        _hasStableLaunchDirection = false;
+        _stableLaunchDirection = Vector3.zero;
+        ClearPredictionCache();
+    }
+
+    private static void CopyTrajectory(IReadOnlyList<Vector3> source, List<Vector3> target)
+    {
+        target.Clear();
+        if (source == null) return;
+        for (int i = 0; i < source.Count; i++)
+            target.Add(source[i]);
     }
 
     private static float GetMinLaunchForce(float maxDragDistance)
@@ -272,18 +371,15 @@ public class IdleState : IEntityState
     {
         if (ctx.LaunchForce <= 0f || ctx.LaunchDirection.sqrMagnitude < 0.0001f)
         {
-            Debug.Log("[Aim] Released below launch deadzone, cancelled.");
             CancelDrag();
             return;
         }
 
         isDragging = false;
         _dragInput.ForceEnd();
+        ResetAimStability();
         _comVisualizer?.EndAimVisualization();
         ctx.AimChannel?.RaiseReleased(ctx.LaunchForce);
-
-        float dragDistance = ctx.LaunchForce * ctx.pen.maxDragDistance;
-        Debug.Log($"[Launch] Force={ctx.LaunchForce:F2} Drag={dragDistance:F3}m dir={ctx.LaunchDirection}");
 
         stateMachine.ChangeState(new ActionState(stateMachine, ctx));
     }
@@ -292,6 +388,7 @@ public class IdleState : IEntityState
     {
         isDragging = false;
         _dragInput.ForceEnd();
+        ResetAimStability();
         ctx.LaunchDirection = Vector3.zero;
         ctx.LaunchForce = 0f;
         _comVisualizer?.EndAimVisualization();

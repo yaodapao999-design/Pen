@@ -1,0 +1,49 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b263a2682a6774a08886e9211ac3efe8, type: 3}
+  m_Name: 爆冲
+  m_EditorClassIdentifier: Assembly-CSharp::ImpactDriverEffect
+  DisplayName: "爆冲"
+  Description: "角度越正、速度越快，击退越狠。"
+  KnockbackVelocity: 5.2
+  MinRelativeVelocity: 0.65
+  PerfectMinRelativeVelocity: 1.55
+  MinTipForwardDot: 0.38
+  PerfectTipForwardDot: 0.86
+  MinVelocityForwardDot: 0.16
+  PerfectVelocityForwardDot: 0.72
+  Cooldown: 0.18
+  ContactTolerance: 0.055
+  BiteHoldSeconds: 0.055
+  BiteVelocity: 0.34
+  SelfReactionVelocity: 0.36
+  YawTorqueVelocity: 4.4
+  InstabilityDuration: 0.36
+  InstabilityTorque: 22
+  PerfectHitMultiplier: 1.5
+  ShockwaveColor: {r: 0.54, g: 0.88, b: 1, a: 0.74}
+  SparkColor: {r: 1, g: 0.78, b: 0.26, a: 0.95}
+  CoreFlashColor: {r: 1, g: 1, b: 1, a: 0.82}
+  DrillRingColor: {r: 0.54, g: 0.96, b: 1, a: 0.82}
+  ArcColor: {r: 0.72, g: 0.94, b: 1, a: 0.82}
+  ScoreMarkColor: {r: 0.08, g: 0.11, b: 0.12, a: 0.62}
+  HitVfxDuration: 0.32
+  ShockwaveRadius: 0.52
+  CoreFlashRadius: 0.14
+  DrillRingRadius: 0.2
+  DrillSpiralDepth: 0.26
+  ArcLength: 0.4
+  ScoreMarkRadius: 0.21
+  SparkLength: 0.5
+  SparkCount: 15
+  DrillRingCount: 3
+  ArcCount: 5

@@ -138,7 +138,6 @@ public class PenDragInteractor : MonoBehaviour
             return true;
         }
 
-        Debug.Log($"[PenDragInteractor/debug] Tier1+Tier2 都未命中 | screenPos={screenPos} threshold={threshold:F1}px");
         return false;
     }
 

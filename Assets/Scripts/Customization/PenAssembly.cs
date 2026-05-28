@@ -18,7 +18,13 @@ public class PenAssembly : MonoBehaviour
     {
         public PenPartData Data;
         public SocketType Socket;
-        public PartEntry(PenPartData data, SocketType socket) { Data = data; Socket = socket; }
+        public string SocketId;
+        public PartEntry(PenPartData data, SocketType socket, string socketId = null)
+        {
+            Data = data;
+            Socket = socket;
+            SocketId = socketId;
+        }
     }
 
     private readonly List<PartEntry> _assembledParts = new();
@@ -94,7 +100,7 @@ public class PenAssembly : MonoBehaviour
         // 零件
         foreach (var entry in _assembledParts)
         {
-            var socket = FindSocket(_barrelRoot, entry.Socket);
+            var socket = FindSocket(_barrelRoot, entry.Socket, entry.SocketId);
             if (socket == null)
             {
                 Debug.LogWarning($"找不到 Socket {entry.Socket}，跳过 {entry.Data.DisplayName}");
@@ -201,13 +207,23 @@ public class PenAssembly : MonoBehaviour
 
     // ─── 工具 ────────────────────────────────────────────────────────────────
 
-    private static PartSocket FindSocket(GameObject root, SocketType type)
+    private static PartSocket FindSocket(GameObject root, SocketType type, string socketId)
     {
+        PartSocket firstAvailable = null;
         foreach (var socket in root.GetComponentsInChildren<PartSocket>())
         {
-            if (socket.SocketType == type && !socket.IsOccupied)
-                return socket;
+            if (socket.SocketType != type || socket.IsOccupied)
+                continue;
+
+            if (!string.IsNullOrWhiteSpace(socketId))
+            {
+                if (socket.SocketId == socketId)
+                    return socket;
+                continue;
+            }
+
+            firstAvailable ??= socket;
         }
-        return null;
+        return firstAvailable;
     }
 }

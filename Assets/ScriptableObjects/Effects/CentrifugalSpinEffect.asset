@@ -1,0 +1,43 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c2547146607494537b12dea8a650eed8, type: 3}
+  m_Name: 回旋
+  m_EditorClassIdentifier: Assembly-CSharp::CentrifugalSpinEffect
+  DisplayName: "回旋"
+  Description: "碰撞会打偏回程，适合赌二次命中。"
+  ChargeForceThreshold: 0.96
+  FullChargeSeconds: 0.72
+  OppositeEndRatio: 0.2
+  MinReleaseCharge: 0.16
+  ChargedSpinAngularVelocity: 4.8
+  PivotKickVelocity: 0.42
+  PivotCenterBlend: 0.12
+  MaxYawAngularVelocity: 10.5
+  BoomerangOutwardSeconds: 0.36
+  BoomerangTurnDistance: 1.35
+  BoomerangMaxDuration: 2.25
+  BoomerangReturnSpeed: 7.2
+  BoomerangReturnResponsiveness: 3.15
+  BoomerangReturnAcceleration: 13.8
+  BoomerangCurlAcceleration: 2.1
+  BoomerangFinishDistance: 0.32
+  BoomerangSpinTorque: 30
+  SpinRingColor: {r: 0.58, g: 0.92, b: 1, a: 0.64}
+  ReturnArcColor: {r: 1, g: 0.82, b: 0.28, a: 0.58}
+  SpinRingRadius: 0.43
+  SpinRingWidth: 0.024
+  ReturnArcWidth: 0.026
+  BarOffset: {x: 0, y: 0.26, z: 0}
+  BarSize: {x: 0.42, y: 0.045}
+  BarBackColor: {r: 0.02, g: 0.07, b: 0.1, a: 0.55}
+  BarFillColor: {r: 0.6, g: 0.9, b: 1, a: 0.88}
+  BarReadyColor: {r: 1, g: 0.82, b: 0.36, a: 0.95}

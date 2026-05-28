@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 77e4650b0af9f4a06b67ded7c0f7d707, type: 3}
+  m_Name: 回旋镖
+  m_EditorClassIdentifier: Assembly-CSharp::PenPartData
+  PartID: centrifugal_alloy_hammer
+  DisplayName: "回旋镖"
+  Category: 1
+  Description: "满拉后先冲出，再转向回返。"
+  VisualPrefab: {fileID: 4057139233056458266, guid: d6d72c1e08fd74804a9cfec89e9f1660, type: 3}
+  Icon: {fileID: 0}
+  PlugsInto: 5
+  Mass: 0.42
+  PhysicsMaterial: {fileID: 13400000, guid: 2ffce597b755a49b39a2192ad1452573, type: 2}
+  LaunchPowerMultiplier: 1
+  BuyPrice: 15
+  Effects:
+  - {fileID: 11400000, guid: 4bed4374b513c4a3e9f733270d154a6c, type: 2}

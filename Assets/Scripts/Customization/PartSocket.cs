@@ -8,6 +8,8 @@ public class PartSocket : MonoBehaviour
 {
     [Header("连接点配置")]
     public SocketType SocketType;
+    [Tooltip("同一个 SocketType 有多个位置时使用的稳定 ID，例如 TipLeft/TipRight。留空则只按类型匹配。")]
+    public string SocketId;
 
     // 当前插入此 socket 的部件实例（null = 空闲）
     public PenPartInstance OccupiedBy { get; private set; }

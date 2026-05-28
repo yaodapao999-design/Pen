@@ -13,7 +13,17 @@ public class LaunchBoostEffect : PenPartEffect
     public override void OnLaunch(PenEffectContext context, Vector3 direction, float force)
     {
         if (Mathf.Approximately(Multiplier, 1f)) return;
-        // 额外施加力 = 原始力 × (倍率 - 1)
-        context.Rigidbody.AddForce(direction * (force * (Multiplier - 1f)), ForceMode.Impulse);
+        if (context == null || context.Rigidbody == null || context.Entity == null) return;
+
+        Vector3 flatDirection = direction;
+        flatDirection.y = 0f;
+        if (flatDirection.sqrMagnitude < 1e-6f) return;
+        flatDirection.Normalize();
+
+        // Match PenEntity's velocity-driven launch unit:
+        // extra impulse = launch velocity * mass * extra multiplier.
+        float baseVelocity = context.Entity.EstimateLaunchVelocity(force);
+        float extraImpulse = baseVelocity * context.Rigidbody.mass * Mathf.Max(0f, Multiplier - 1f);
+        context.Rigidbody.AddForce(flatDirection * extraImpulse, ForceMode.Impulse);
     }
 }

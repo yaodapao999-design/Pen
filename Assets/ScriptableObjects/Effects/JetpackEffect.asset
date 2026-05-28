@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 82277154d7c8f470bbbd24d4ab3cc478, type: 3}
+  m_Name: 边缘反推
+  m_EditorClassIdentifier: Assembly-CSharp::JetpackEffect
+  DisplayName: "边缘反推"
+  Description: "反作用力把笔推回桌面，速度过猛仍会坠落。"
+  MinForce: 0.08
+  Duration: 1.45
+  MinimumDurationFactor: 0.55
+  EdgeProbeDistance: 0.46
+  EdgeProbeRadius: 0.12
+  EdgeLookAheadTime: 0.14
+  MinHorizontalSpeed: 0.45
+  RetroDuration: 0.56
+  RetroThrustAcceleration: 10.5
+  RetroVelocityDamping: 1.35
+  MaxReturnSpeed: 2.6
+  ExhaustCoreColor: {r: 0.44, g: 0.88, b: 1, a: 0.86}
+  ExhaustHotColor: {r: 1, g: 0.58, b: 0.18, a: 0.78}
+  ExhaustSmokeColor: {r: 0.42, g: 0.56, b: 0.64, a: 0.26}
+  ExhaustLength: 0.62
+  ExhaustRadius: 0.13
+  ExhaustRate: 78

@@ -46,16 +46,24 @@ public class PenPhysicsAggregator
         foreach (var part in parts)
         {
             if (part == null || part.Data == null) continue;
-            var col = part.GameObject.GetComponent<Collider>();
-            if (col == null)
+            Collider[] colliders = part.GameObject.GetComponentsInChildren<Collider>(false);
+            float totalWeight = ComputeColliderWeightSum(colliders);
+            if (totalWeight <= 1e-5f)
             {
                 Debug.LogWarning($"[PenPhysicsAggregator] {part.Data.DisplayName} 的 VisualPrefab 缺少 Collider——" +
                                  " 不会贡献 COM/惯性/摩擦。请给该 prefab 添加原生 Collider。");
                 continue;
             }
-            ApplyContactMaterial(col, part.Data);
-            var seg = BuildSegment(col, part.Data.Mass);
-            if (seg.HasValue) segments.Add(seg.Value);
+
+            foreach (Collider col in colliders)
+            {
+                if (!IsPhysicalCollider(col)) continue;
+
+                ApplyContactMaterial(col, part.Data);
+                float massShare = part.Data.Mass * (EstimateColliderWeight(col) / totalWeight);
+                var seg = BuildSegment(col, massShare);
+                if (seg.HasValue) segments.Add(seg.Value);
+            }
         }
 
         float totalMass = 0f;
@@ -184,5 +192,34 @@ public class PenPhysicsAggregator
         if (col == null || data == null) return;
         col.isTrigger = false;
         col.material = data.PhysicsMaterial;
+    }
+
+    private static float ComputeColliderWeightSum(Collider[] colliders)
+    {
+        if (colliders == null || colliders.Length == 0)
+            return 0f;
+
+        float total = 0f;
+        foreach (Collider col in colliders)
+        {
+            if (!IsPhysicalCollider(col)) continue;
+            total += EstimateColliderWeight(col);
+        }
+        return total;
+    }
+
+    private static bool IsPhysicalCollider(Collider col)
+    {
+        return col != null && col.enabled;
+    }
+
+    private static float EstimateColliderWeight(Collider col)
+    {
+        if (col == null)
+            return 0f;
+
+        Bounds b = col.bounds;
+        Vector3 size = b.size;
+        return Mathf.Max(0.001f, size.x * size.y * size.z);
     }
 }

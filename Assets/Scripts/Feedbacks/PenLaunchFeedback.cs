@@ -23,6 +23,10 @@ public class PenLaunchFeedback : MonoBehaviour
     [Tooltip("低于此 force 不触发反馈（避免轻点取消或微拉也响）。默认 0.2。")]
     [SerializeField] [Range(0f, 1f)] private float minTriggerForce = 0.2f;
 
+    [Tooltip("低于此 force 不显示释放后的可读性轨迹。这个阈值应接近战斗最小有效力度，" +
+             "不要和声音/镜头反馈阈值绑定，否则轻弹会发射但没有轨迹线。")]
+    [SerializeField] [Range(0f, 1f)] private float minReadabilityForce = 0.06f;
+
     [Tooltip("即便 launchFeedbacks 未配置，也默认调用 FocusCameraController FOV 轻击，让发射瞬间至少有镜头反应。\n" +
              "配置了 MMF 后可关掉走 MMF 管道。")]
     [SerializeField] private bool fallbackCameraPunch = true;
@@ -43,10 +47,18 @@ public class PenLaunchFeedback : MonoBehaviour
     [SerializeField] private float fadeDuration = 0.46f;
     [Tooltip("实际轨迹采样间距（m）。太小会像 debug 线，太大又读不出弯曲。")]
     [SerializeField] private float trailSampleSpacing = 0.055f;
+    [Tooltip("释放后第一段轨迹的最小采样间距（m）。比常规间距小，避免轻弹/短滑时线条只有一个点而不可见。")]
+    [SerializeField] private float firstTrailSampleSpacing = 0.018f;
+    [Tooltip("真实轨迹还没积累到第二个采样点前，先沿发射方向画一小段起笔，保证释放瞬间可见。")]
+    [SerializeField] private float initialTrailStubLength = 0.040f;
     [Tooltip("实际轨迹线宽（m）。")]
     [SerializeField] private float actualTrailWidth = 0.032f;
     [Tooltip("上一帧预判对照线宽（m）。")]
     [SerializeField] private float predictionGhostWidth = 0.018f;
+    [Tooltip("发射后在 Console 打印预判和实际轨迹误差，方便调试预判线可信度。")]
+    [SerializeField] private bool logPredictionAccuracy = true;
+    [Tooltip("末端误差低于这个距离时认为预判足够可信。")]
+    [SerializeField] private float trustedEndError = 0.28f;
     [SerializeField] private Color actualTrailColor = new Color(1.00f, 0.83f, 0.45f, 0.72f);
     [SerializeField] private Color predictionGhostColor = new Color(0.58f, 0.90f, 1.00f, 0.34f);
     [SerializeField] private Color spinCueColor = new Color(1.00f, 0.55f, 0.18f, 0.70f);
@@ -68,7 +80,9 @@ public class PenLaunchFeedback : MonoBehaviour
     private bool _aimSubscribed;
     private bool _feedbackActive;
     private bool _recordingActual;
+    private bool _accuracyReported;
     private float _feedbackAge;
+    private float _peakAngularVelocity;
     private Vector3 _trackedPointLocal;
     private float _feedbackY;
 
@@ -122,7 +136,11 @@ public class PenLaunchFeedback : MonoBehaviour
         _feedbackAge += Time.deltaTime;
 
         if (_recordingActual)
+        {
             SampleActualTrail();
+            if (_rb != null)
+                _peakAngularVelocity = Mathf.Max(_peakAngularVelocity, _rb.angularVelocity.magnitude);
+        }
 
         float fadeStart = Mathf.Max(0.05f, actualTrailDuration);
         float alpha = _feedbackAge <= fadeStart
@@ -139,8 +157,11 @@ public class PenLaunchFeedback : MonoBehaviour
         ApplyLineColor(_predictionGhost, predictionGhostColor, predictionAlpha);
         ApplyLineColor(_causeCue, GetCauseColor(), alpha);
 
-        if (_feedbackAge >= actualTrailDuration || IsPenSlow())
+        if (_recordingActual && (_feedbackAge >= actualTrailDuration || IsPenSlow()))
+        {
             _recordingActual = false;
+            ReportPredictionAccuracy();
+        }
 
         if (alpha <= 0.001f && predictionAlpha <= 0.001f)
             HideReadabilityFeedback();
@@ -148,16 +169,16 @@ public class PenLaunchFeedback : MonoBehaviour
 
     private void HandleLaunch(float force)
     {
-        if (force < minTriggerForce) return;
-        if (launchFeedbacks != null)
+        bool shouldPlayImpactFeedback = force >= minTriggerForce;
+        if (shouldPlayImpactFeedback && launchFeedbacks != null)
         {
             launchFeedbacks.FeedbacksIntensity = force;
             launchFeedbacks.PlayFeedbacks(transform.position);
         }
-        if (fallbackCameraPunch)
+        if (shouldPlayImpactFeedback && fallbackCameraPunch)
             FocusCameraController.Instance?.FocusOn(transform.position, force * cameraFallbackScale);
 
-        if (drawReadabilityFeedback)
+        if (drawReadabilityFeedback && force >= minReadabilityForce)
             BeginReadabilityFeedback();
     }
 
@@ -194,20 +215,23 @@ public class PenLaunchFeedback : MonoBehaviour
 
     private void BeginReadabilityFeedback()
     {
-        if (!_hasLastAim || _rb == null)
+        if (_rb == null)
             return;
 
         EnsureReadabilityObjects();
         _feedbackActive = true;
         _recordingActual = true;
+        _accuracyReported = false;
         _feedbackAge = 0f;
+        _peakAngularVelocity = _rb != null ? _rb.angularVelocity.magnitude : 0f;
         _actualPoints.Clear();
-        _trackedPointLocal = transform.InverseTransformPoint(_lastAim.ContactPointWorld);
-        _feedbackY = _lastAim.ContactPointWorld.y + 0.010f;
+        Vector3 contactPoint = GetLaunchContactPointForFeedback();
+        _trackedPointLocal = transform.InverseTransformPoint(contactPoint);
+        _feedbackY = contactPoint.y + 0.010f;
 
         Vector3 first = GetActualVisualPoint();
         _actualPoints.Add(first);
-        ApplyPositions(_actualTrail, _actualPoints);
+        ApplyActualTrailPositions();
         DrawPredictionGhost();
         DrawCauseCue();
         ApplyLineColor(_actualTrail, actualTrailColor, 1f);
@@ -218,12 +242,27 @@ public class PenLaunchFeedback : MonoBehaviour
     private void SampleActualTrail()
     {
         Vector3 point = GetActualVisualPoint();
+        float requiredSpacing = _actualPoints.Count <= 1
+            ? Mathf.Max(0.001f, firstTrailSampleSpacing)
+            : Mathf.Max(0.001f, trailSampleSpacing);
+
         if (_actualPoints.Count == 0 ||
-            Vector3.Distance(Flatten(_actualPoints[_actualPoints.Count - 1]), Flatten(point)) >= trailSampleSpacing)
+            Vector3.Distance(Flatten(_actualPoints[_actualPoints.Count - 1]), Flatten(point)) >= requiredSpacing)
         {
             _actualPoints.Add(point);
-            ApplyPositions(_actualTrail, _actualPoints);
+            ApplyActualTrailPositions();
         }
+    }
+
+    private Vector3 GetLaunchContactPointForFeedback()
+    {
+        if (_pen != null && _pen.LastLaunchSnapshot.IsValid)
+            return _pen.LastLaunchSnapshot.ContactPointWorld;
+
+        if (_hasLastAim)
+            return _lastAim.ContactPointWorld;
+
+        return transform.position;
     }
 
     private Vector3 GetActualVisualPoint()
@@ -235,6 +274,12 @@ public class PenLaunchFeedback : MonoBehaviour
 
     private void DrawPredictionGhost()
     {
+        if (!_hasLastAim)
+        {
+            _predictionGhost.positionCount = 0;
+            return;
+        }
+
         var trajectory = _lastAim.PredictedTrajectory;
         if (trajectory == null || trajectory.Count < 2)
         {
@@ -255,10 +300,127 @@ public class PenLaunchFeedback : MonoBehaviour
         }
     }
 
+    private void ReportPredictionAccuracy()
+    {
+        if (_accuracyReported || !_hasLastAim)
+            return;
+        _accuracyReported = true;
+
+        LaunchPredictionAccuracy accuracy = ComputePredictionAccuracy();
+        if (!logPredictionAccuracy)
+            return;
+
+        string trust = accuracy.EndError <= Mathf.Max(0.01f, trustedEndError) ? "可信" : "偏差大";
+        Debug.Log(
+            $"[LaunchAccuracy] {trust} | " +
+            $"pred={accuracy.PredictedDistance:F2}m actual={accuracy.ActualDistance:F2}m " +
+            $"endErr={accuracy.EndError:F2}m avgErr={accuracy.AverageError:F2}m " +
+            $"spinPeak={_peakAngularVelocity:F2}rad/s friction={_lastAim.Friction01:F2} force={_lastAim.Force:F2}",
+            this);
+    }
+
+    private LaunchPredictionAccuracy ComputePredictionAccuracy()
+    {
+        var predicted = _lastAim.PredictedTrajectory;
+        float predictedDistance = MeasureArc(predicted);
+        float actualDistance = MeasureArc(_actualPoints);
+        float endError = 0f;
+        float averageError = 0f;
+
+        if (predicted != null && predicted.Count >= 2 && _actualPoints.Count >= 2)
+        {
+            Vector3 predictionOffset = _lastAim.ContactPointWorld - predicted[0];
+            predictionOffset.y = 0f;
+            Vector3 predictedEnd = predicted[predicted.Count - 1] + predictionOffset;
+            predictedEnd.y = 0f;
+            Vector3 actualEnd = _actualPoints[_actualPoints.Count - 1];
+            actualEnd.y = 0f;
+            endError = Vector3.Distance(predictedEnd, actualEnd);
+            averageError = MeasureAverageError(predicted, _actualPoints, predictionOffset);
+        }
+
+        return new LaunchPredictionAccuracy(predictedDistance, actualDistance, endError, averageError);
+    }
+
+    private static float MeasureAverageError(IReadOnlyList<Vector3> predicted, IReadOnlyList<Vector3> actual, Vector3 predictionOffset)
+    {
+        if (predicted == null || actual == null || predicted.Count < 2 || actual.Count < 2)
+            return 0f;
+
+        float actualArc = MeasureArc(actual);
+        float predictedArc = MeasureArc(predicted);
+        if (actualArc <= 1e-5f || predictedArc <= 1e-5f)
+            return 0f;
+
+        const int SAMPLE_COUNT = 8;
+        float total = 0f;
+        for (int i = 0; i < SAMPLE_COUNT; i++)
+        {
+            float t = i / (float)(SAMPLE_COUNT - 1);
+            Vector3 a = SampleByArc01(actual, actualArc, t);
+            Vector3 p = SampleByArc01(predicted, predictedArc, t) + predictionOffset;
+            a.y = 0f;
+            p.y = 0f;
+            total += Vector3.Distance(a, p);
+        }
+
+        return total / SAMPLE_COUNT;
+    }
+
+    private static float MeasureArc(IReadOnlyList<Vector3> points)
+    {
+        if (points == null || points.Count < 2)
+            return 0f;
+
+        float total = 0f;
+        for (int i = 1; i < points.Count; i++)
+        {
+            Vector3 a = points[i - 1]; a.y = 0f;
+            Vector3 b = points[i]; b.y = 0f;
+            total += Vector3.Distance(a, b);
+        }
+        return total;
+    }
+
+    private static Vector3 SampleByArc01(IReadOnlyList<Vector3> points, float totalArc, float t)
+    {
+        if (points == null || points.Count == 0)
+            return Vector3.zero;
+        if (points.Count == 1 || totalArc <= 1e-5f)
+            return points[0];
+
+        float target = Mathf.Clamp01(t) * totalArc;
+        float walked = 0f;
+        for (int i = 1; i < points.Count; i++)
+        {
+            Vector3 a = points[i - 1]; a.y = 0f;
+            Vector3 b = points[i]; b.y = 0f;
+            float segment = Vector3.Distance(a, b);
+            if (segment <= 1e-5f)
+                continue;
+
+            if (walked + segment >= target)
+            {
+                float localT = (target - walked) / segment;
+                return Vector3.Lerp(points[i - 1], points[i], localT);
+            }
+
+            walked += segment;
+        }
+
+        return points[points.Count - 1];
+    }
+
     private void DrawCauseCue()
     {
         if (_causeCue == null)
             return;
+
+        if (!_hasLastAim)
+        {
+            _causeCue.positionCount = 0;
+            return;
+        }
 
         if (_lastAim.Spin01 >= 0.18f)
         {
@@ -406,6 +568,42 @@ public class PenLaunchFeedback : MonoBehaviour
             line.SetPosition(i, points[i]);
     }
 
+    private void ApplyActualTrailPositions()
+    {
+        if (_actualTrail == null)
+            return;
+
+        if (_actualPoints.Count == 1 && initialTrailStubLength > 0f)
+        {
+            Vector3 direction = GetInitialLaunchDirection();
+            _actualTrail.positionCount = 2;
+            _actualTrail.SetPosition(0, _actualPoints[0]);
+            _actualTrail.SetPosition(1, _actualPoints[0] + direction * initialTrailStubLength);
+            return;
+        }
+
+        ApplyPositions(_actualTrail, _actualPoints);
+    }
+
+    private Vector3 GetInitialLaunchDirection()
+    {
+        Vector3 direction = Vector3.zero;
+        if (_pen != null && _pen.LastLaunchSnapshot.IsValid)
+            direction = _pen.LastLaunchSnapshot.Direction;
+        else if (_hasLastAim)
+            direction = _lastAim.LaunchDirection;
+        else if (_rb != null)
+            direction = _rb.linearVelocity;
+
+        direction.y = 0f;
+        if (direction.sqrMagnitude > 1e-6f)
+            return direction.normalized;
+
+        Vector3 fallback = transform.forward;
+        fallback.y = 0f;
+        return fallback.sqrMagnitude > 1e-6f ? fallback.normalized : Vector3.forward;
+    }
+
     private static void ApplyLineColor(LineRenderer line, Color baseColor, float alphaMultiplier)
     {
         if (line == null)
@@ -439,6 +637,22 @@ public class PenLaunchFeedback : MonoBehaviour
     {
         p.y = 0f;
         return p;
+    }
+
+    private readonly struct LaunchPredictionAccuracy
+    {
+        public readonly float PredictedDistance;
+        public readonly float ActualDistance;
+        public readonly float EndError;
+        public readonly float AverageError;
+
+        public LaunchPredictionAccuracy(float predictedDistance, float actualDistance, float endError, float averageError)
+        {
+            PredictedDistance = predictedDistance;
+            ActualDistance = actualDistance;
+            EndError = endError;
+            AverageError = averageError;
+        }
     }
 
     private static Material CreateReadabilityMaterial()

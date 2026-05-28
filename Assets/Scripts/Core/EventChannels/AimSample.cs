@@ -100,10 +100,7 @@ public readonly struct AimSample
 
 public static class AimReadabilityMetrics
 {
-    public const float DefaultDynamicFriction = 0.42f;
-
-    private const float MIN_FRICTION = 0.04f;
-    private const float MAX_FRICTION = 2.5f;
+    public const float DefaultDynamicFriction = PenLaunchPhysics.DefaultDynamicFriction;
 
     public static void Build(
         PenEntity pen,
@@ -124,12 +121,12 @@ public static class AimReadabilityMetrics
         out float predictionArcLength,
         out float predictionCurve01)
     {
-        Rigidbody rb = pen != null ? pen.rb : null;
-        effectiveContactPointWorld = pen != null ? pen.GetEffectiveLaunchContactPoint(contactPointWorld) : contactPointWorld;
-        centerOfMassWorld = rb != null ? rb.worldCenterOfMass : (pen != null ? pen.transform.position : contactPointWorld);
-        massKg = rb != null ? rb.mass : 0f;
+        PenLaunchPhysicsSnapshot launch = PenLaunchPhysics.Build(pen, launchDirection, force, contactPointWorld);
+        effectiveContactPointWorld = launch.EffectiveContactPointWorld;
+        centerOfMassWorld = launch.CenterOfMassWorld;
+        massKg = launch.MassKg;
         mass01 = Mathf.InverseLerp(0.08f, 0.8f, massKg);
-        launchSpeed = pen != null ? pen.EstimateLaunchVelocity(force) : 0f;
+        launchSpeed = launch.LaunchVelocity;
 
         Vector3 axis;
         Vector3 bodyCenter;
@@ -156,8 +153,8 @@ public static class AimReadabilityMetrics
         contactOffsetNormalized = Vector3.Dot(momentArm, side) / Mathf.Max(0.05f, halfLength);
         spin01 = Mathf.Clamp01(Mathf.Abs(contactOffsetNormalized));
 
-        estimatedFriction = EstimateDynamicFriction(pen, contactPointWorld);
-        friction01 = Mathf.InverseLerp(0.15f, 1.2f, estimatedFriction);
+        estimatedFriction = launch.DynamicFriction;
+        friction01 = launch.Friction01;
 
         predictionArcLength = MeasureArcLength(predictedTrajectory);
         predictionCurve01 = MeasureCurve01(predictedTrajectory);
@@ -226,45 +223,6 @@ public static class AimReadabilityMetrics
         }
 
         return hasBounds ? bounds : null;
-    }
-
-    private static float EstimateDynamicFriction(PenEntity pen, Vector3 contactWorld)
-    {
-        if (pen == null)
-            return DefaultDynamicFriction;
-
-        Collider[] colliders = pen.GetComponentsInChildren<Collider>();
-        if (colliders == null || colliders.Length == 0)
-            return DefaultDynamicFriction;
-
-        float weightedFriction = 0f;
-        float totalWeight = 0f;
-
-        foreach (Collider col in colliders)
-        {
-            if (col == null || !col.enabled || col.isTrigger)
-                continue;
-
-            PhysicsMaterial material = col.sharedMaterial;
-            float friction = material != null
-                ? Mathf.Clamp(material.dynamicFriction, MIN_FRICTION, MAX_FRICTION)
-                : DefaultDynamicFriction;
-
-            Bounds b = col.bounds;
-            Vector3 size = b.size;
-            float volumeWeight = Mathf.Max(0.001f, Mathf.Sqrt(Mathf.Max(size.x * size.y * size.z, 0.0001f)));
-            float contactDistance = Vector3.Distance(col.ClosestPoint(contactWorld), contactWorld);
-            float localWeight = 1f / Mathf.Max(0.12f, contactDistance + 0.12f);
-            float weight = volumeWeight * localWeight;
-
-            weightedFriction += friction * weight;
-            totalWeight += weight;
-        }
-
-        if (totalWeight <= 1e-5f)
-            return DefaultDynamicFriction;
-
-        return Mathf.Clamp(weightedFriction / totalWeight, MIN_FRICTION, MAX_FRICTION);
     }
 
     private static float MeasureArcLength(IReadOnlyList<Vector3> points)

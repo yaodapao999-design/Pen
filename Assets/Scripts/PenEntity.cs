@@ -56,6 +56,7 @@ public class PenEntity : MonoBehaviour
     public CapsuleCollider penCollider => Assembly != null ? Assembly.BarrelCollider : null;
     public PenAssembly Assembly { get; private set; }
     public bool HasFallen => rb != null && rb.position.y < fallYThreshold;
+    public PenLaunchPhysicsSnapshot LastLaunchSnapshot { get; private set; }
 
     /// <summary>
     /// 发射瞬间事件，参数 force ∈ [0,1]。供反馈层订阅（PenLaunchFeedback 等），
@@ -86,14 +87,17 @@ public class PenEntity : MonoBehaviour
     /// </summary>
     public void Launch(Vector3 direction, float force, Vector3 contactPointWorld)
     {
+        PenLaunchPhysicsSnapshot snapshot = PenLaunchPhysics.Build(this, direction, force, contactPointWorld);
+        LastLaunchSnapshot = snapshot;
+        if (!snapshot.IsValid)
+            return;
+
         rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
 
-        Vector3 impulse = direction * (EstimateLaunchVelocity(force) * rb.mass);
+        rb.AddForceAtPosition(snapshot.Impulse, snapshot.EffectiveContactPointWorld, ForceMode.Impulse);
 
-        rb.AddForceAtPosition(impulse, GetEffectiveLaunchContactPoint(contactPointWorld), ForceMode.Impulse);
-
-        OnLaunched?.Invoke(force);
+        OnLaunched?.Invoke(snapshot.Force01);
     }
 
     /// <summary>

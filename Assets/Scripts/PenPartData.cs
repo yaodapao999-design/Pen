@@ -11,6 +11,8 @@ public class PenPartData : ScriptableObject
     public string PartID;
     public string DisplayName;
     public PartType Category;
+    [TextArea(2, 5)]
+    public string Description;
 
     [Header("--- 表现 ---")]
     public GameObject VisualPrefab;  // 3D模型预制体（含Collider）

@@ -95,11 +95,18 @@ public class BattleStateMachine : MonoBehaviour
             Debug.LogWarning("[BattleStateMachine] AimPhaseChannel 未配置，瞄准视觉层将不会收到事件。" +
                              "请在 Inspector 里拖入 Assets/ScriptableObjects/Channels/AimPhaseChannel.asset");
         ConfigurePlayerFeedbackChannels();
+        RebuildAllPenEffects();
         // 启动预快照：保证首次 RestorePens 有合法位置，即使从未进出过 Battle
         SnapshotPens();
         ChangeState(new IdleState(this, ctx));
         // 首次进入战斗场景：笔 pop-in 入场
         PlayPensIntroPopIn();
+    }
+
+    private void OnDestroy()
+    {
+        SlickOilSplatMap.DestroyAllRuntimeMaps();
+        SlickOilPatch.DestroyAllRuntimePatches();
     }
 
     /// <summary>笔弹入（scale 0 → 1 EaseOutBack）。
@@ -173,6 +180,7 @@ public class BattleStateMachine : MonoBehaviour
 
         CacheInitialPose(enemyPen, out _enemyInitialPos, out _enemyInitialRot);
         if (ctx != null) ctx.EnemyPen = enemyPen;
+        RebuildPenEffects(enemyPen, null);
         SnapshotPens();
         IntroPopIn.PlayOn(this, enemyPen.transform, 0f, Vector3.one);
         _focusCameraPensRegistered = false;
@@ -278,7 +286,8 @@ public class BattleStateMachine : MonoBehaviour
                typeName == "PenHoverVisuals" ||
                typeName == "PenPressFeedback" ||
                typeName == "PenAimThresholdFX" ||
-               typeName == "PenLaunchFeedback";
+               typeName == "PenLaunchFeedback" ||
+               typeName == "PenCollisionFeedback";
     }
 
     // ─── 场景层：供 BattlePhase 调用 ──────────────────────────────────────────
@@ -384,6 +393,11 @@ public class BattleStateMachine : MonoBehaviour
         }
         if (pen != null) pen.gameObject.SetActive(active);
         if (enemyPen != null) enemyPen.gameObject.SetActive(active);
+
+        if (active)
+            RebuildAllPenEffects();
+        else
+            ClearAllPenEffects();
     }
 
     /// <summary>
@@ -400,8 +414,50 @@ public class BattleStateMachine : MonoBehaviour
     private IEnumerator HidePensCoroutine(float delay)
     {
         yield return new WaitForSeconds(delay);
+        ClearAllPenEffects();
         if (pen != null) pen.gameObject.SetActive(false);
         if (enemyPen != null) enemyPen.gameObject.SetActive(false);
         _hidePensCo = null;
+    }
+
+    private void RebuildAllPenEffects()
+    {
+        RebuildPenEffects(pen, _aimChannel);
+        RebuildPenEffects(enemyPen, null);
+    }
+
+    private static void RebuildPenEffects(PenEntity entity, AimPhaseChannelSO aimChannel)
+    {
+        if (entity == null) return;
+        var runner = entity.GetComponent<PenEffectRunner>();
+        if (runner == null)
+            runner = entity.gameObject.AddComponent<PenEffectRunner>();
+
+        if (entity.GetComponent<PenCollisionEffectDispatcher>() == null)
+            entity.gameObject.AddComponent<PenCollisionEffectDispatcher>();
+
+        runner.RebuildEffects();
+        ConfigureAimDrivenEffects(entity, aimChannel);
+    }
+
+    private static void ConfigureAimDrivenEffects(PenEntity entity, AimPhaseChannelSO aimChannel)
+    {
+        if (entity == null) return;
+
+        var centrifugal = entity.GetComponent<CentrifugalChargeRuntime>();
+        if (centrifugal != null)
+            centrifugal.SetChannel(aimChannel);
+    }
+
+    private void ClearAllPenEffects()
+    {
+        ClearPenEffects(pen);
+        ClearPenEffects(enemyPen);
+    }
+
+    private static void ClearPenEffects(PenEntity entity)
+    {
+        if (entity == null) return;
+        entity.GetComponent<PenEffectRunner>()?.ClearEffects();
     }
 }

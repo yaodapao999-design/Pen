@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 77e4650b0af9f4a06b67ded7c0f7d707, type: 3}
+  m_Name: 泼墨
+  m_EditorClassIdentifier: Assembly-CSharp::PenPartData
+  PartID: slick_oil_core
+  DisplayName: "泼墨"
+  Category: 3
+  Description: "弹射沿路泼出大片湿墨。"
+  VisualPrefab: {fileID: 2803278840738422023, guid: 9083a3dc6c3a447d5b37df7af696e57d, type: 3}
+  Icon: {fileID: 0}
+  PlugsInto: 6
+  Mass: 0.008
+  PhysicsMaterial: {fileID: 13400000, guid: 2ffce597b755a49b39a2192ad1452573, type: 2}
+  LaunchPowerMultiplier: 1
+  BuyPrice: 14
+  Effects:
+  - {fileID: 11400000, guid: b99298cb1ffc54cc5b27543428a7ffcd, type: 2}

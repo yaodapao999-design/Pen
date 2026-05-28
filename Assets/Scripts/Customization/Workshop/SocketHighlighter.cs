@@ -41,7 +41,7 @@ public class SocketHighlighter : MonoBehaviour
         {
             if (socket.SocketType != partData.PlugsInto) continue;
 
-            bool occupied = socket.GetComponentInChildren<WorkshopPart>() != null;
+            bool occupied = WorkshopSocketUtility.IsOccupied(socket);
 
             var indicator = CreateIndicator(socket);
             var r = indicator.GetComponentInChildren<Renderer>();
@@ -79,8 +79,13 @@ public class SocketHighlighter : MonoBehaviour
 
         if (_nearestSocket != null
             && _indicators.TryGetValue(_nearestSocket, out var old)
-            && old.renderer != null && HighlightMaterial != null)
-            old.renderer.material = HighlightMaterial;
+            && old.renderer != null)
+        {
+            bool occupied = WorkshopSocketUtility.IsOccupied(_nearestSocket);
+            var mat = occupied ? (OccupiedMaterial != null ? OccupiedMaterial : HighlightMaterial)
+                               : HighlightMaterial;
+            if (mat != null) old.renderer.material = mat;
+        }
 
         _nearestSocket = best;
 

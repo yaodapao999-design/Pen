@@ -396,7 +396,7 @@ public class WorkshopController : MonoBehaviour
         // 已装配零件
         foreach (var entry in CurrentPen.AssembledParts)
         {
-            var socket = FindSocket(barrelWP, entry.Socket);
+            var socket = FindSocket(barrelWP, entry.Socket, entry.SocketId);
             if (socket == null)
             {
                 Debug.LogWarning($"[Workshop] 笔杆容器上找不到 Socket {entry.Socket}");
@@ -429,9 +429,9 @@ public class WorkshopController : MonoBehaviour
         var parts = new List<PenAssembly.PartEntry>();
         foreach (var socket in barrel.GetComponentsInChildren<PartSocket>())
         {
-            var child = socket.GetComponentInChildren<WorkshopPart>();
+            var child = WorkshopSocketUtility.GetDirectOccupant(socket);
             if (child != null && child != barrel && child.PartData != null)
-                parts.Add(new PenAssembly.PartEntry(child.PartData, socket.SocketType));
+                parts.Add(new PenAssembly.PartEntry(child.PartData, socket.SocketType, socket.SocketId));
         }
         CurrentPen.SetData(barrel.PartData, parts);
 
@@ -462,11 +462,24 @@ public class WorkshopController : MonoBehaviour
 
     // ─── 工具 ─────────────────────────────────────────────────────────────────
 
-    private static PartSocket FindSocket(WorkshopPart barrelWP, SocketType type)
+    private static PartSocket FindSocket(WorkshopPart barrelWP, SocketType type, string socketId)
     {
+        PartSocket firstAvailable = null;
         foreach (var s in barrelWP.GetComponentsInChildren<PartSocket>())
-            if (s.SocketType == type) return s;
-        return null;
+        {
+            if (s.SocketType != type) continue;
+            if (WorkshopSocketUtility.IsOccupied(s)) continue;
+
+            if (!string.IsNullOrWhiteSpace(socketId))
+            {
+                if (s.SocketId == socketId)
+                    return s;
+                continue;
+            }
+
+            firstAvailable ??= s;
+        }
+        return firstAvailable;
     }
 
     private void SetPenEntityVisible(bool visible)

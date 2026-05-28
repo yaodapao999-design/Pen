@@ -14,9 +14,13 @@ public class PenCollisionFeedback : MonoBehaviour
 
     [Header("碰撞强度映射")]
     [Tooltip("低于此相对速度不触发反馈")]
-    [SerializeField] private float minImpactVelocity = 1f;
+    [SerializeField] private float minImpactVelocity = 0.9f;
     [Tooltip("达到此相对速度时反馈强度为 1（最大）。建议设为预期最大碰撞速度，如 15")]
     [SerializeField] private float maxImpactVelocity = 15f;
+    [Tooltip("冲量强度映射上限。碰撞反馈会综合相对速度和冲量，让重笔帽真的更有重量。")]
+    [SerializeField] private float maxImpactImpulse = 7.5f;
+    [Tooltip("同一支笔连续碰撞反馈的冷却，避免玩家笔和复制 enemy 双播造成反馈糊成一团。")]
+    [SerializeField] private float feedbackCooldown = 0.08f;
 
     [Header("碰撞过滤")]
     [Tooltip("主过滤 Tag（通常为 Pen），保留兼容")]
@@ -28,6 +32,14 @@ public class PenCollisionFeedback : MonoBehaviour
     [Tooltip("触发慢动作的强度阈值 (0~1)")]
     [Range(0f, 1f)]
     [SerializeField] private float slowMotionThreshold = 0.8f;
+
+    private PenEntity _pen;
+    private float _lastFeedbackTime = -999f;
+
+    private void Awake()
+    {
+        _pen = GetComponent<PenEntity>();
+    }
 
     // ─────────────────────────────────────────────────────────────
     // TODO: 以下 OnCollisionEnter 方式为临时实现，
@@ -41,10 +53,14 @@ public class PenCollisionFeedback : MonoBehaviour
         float impactVelocity = collision.relativeVelocity.magnitude;
         if (impactVelocity < minImpactVelocity) return;
 
-        float intensity = Mathf.InverseLerp(minImpactVelocity, maxImpactVelocity, impactVelocity);
+        if (Time.time - _lastFeedbackTime < Mathf.Max(0f, feedbackCooldown))
+            return;
+
+        float intensity = ComputeImpactIntensity(collision, impactVelocity);
         Vector3 contactPoint = collision.contacts[0].point;
 
         TriggerCollisionFeedbacks(intensity, contactPoint);
+        _lastFeedbackTime = Time.time;
     }
 
     private bool IsAcceptedCollider(GameObject go)
@@ -68,6 +84,7 @@ public class PenCollisionFeedback : MonoBehaviour
         if (collisionFeedbacks == null) return;
 
         // ── 统一播放反馈 ────────────────────────────────────────
+        intensity = Mathf.Clamp01(intensity);
         collisionFeedbacks.FeedbacksIntensity = intensity;
 
         // ── 慢动作（Bullet Time）逻辑控制 ───────────────────────────
@@ -112,5 +129,29 @@ public class PenCollisionFeedback : MonoBehaviour
 
         // ── TODO: 特写镜头 ────────────────────────────────────────
         // 在 CloseupCameraController.cs 实现后，在此处或 ResultState 中触发。
+    }
+
+    private float ComputeImpactIntensity(Collision collision, float impactVelocity)
+    {
+        float speed01 = Mathf.InverseLerp(minImpactVelocity, maxImpactVelocity, impactVelocity);
+        float impulseMagnitude = collision.impulse.magnitude;
+
+        if (impulseMagnitude <= 0.0001f && _pen != null && _pen.rb != null)
+            impulseMagnitude = impactVelocity * Mathf.Max(0.05f, _pen.rb.mass);
+
+        float impulse01 = Mathf.InverseLerp(minImpactVelocity * 0.08f, Mathf.Max(0.1f, maxImpactImpulse), impulseMagnitude);
+        return Mathf.Clamp01(Mathf.Max(speed01, impulse01));
+    }
+
+    private void OnValidate()
+    {
+        if (minImpactVelocity <= 0.001f)
+            minImpactVelocity = 0.9f;
+        if (maxImpactVelocity <= minImpactVelocity)
+            maxImpactVelocity = minImpactVelocity + 0.5f;
+        if (maxImpactImpulse <= 0.001f)
+            maxImpactImpulse = 7.5f;
+        if (feedbackCooldown < 0f)
+            feedbackCooldown = 0.08f;
     }
 }

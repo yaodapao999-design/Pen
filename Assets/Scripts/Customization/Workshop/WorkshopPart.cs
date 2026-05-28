@@ -59,6 +59,7 @@ public class WorkshopPart : MonoBehaviour
     private GameObject _preview;
     private WorkshopPart _threattenedOccupant;
     private Vector3 _threattenedOriginalScale;
+    private MaterialAlphaUtility.Snapshot _threattenedMaterialSnapshot;
 
     // 入场弹入
     private bool _introActive;
@@ -503,7 +504,7 @@ public class WorkshopPart : MonoBehaviour
 
             bestDist = dist;
             best = socket;
-            occupant = socket.GetComponentInChildren<WorkshopPart>();
+            occupant = WorkshopSocketUtility.GetDirectOccupant(socket);
         }
 
         if (best == null) return false;
@@ -596,19 +597,20 @@ public class WorkshopPart : MonoBehaviour
             _preview.transform.localPosition = Vector3.zero;
             _preview.transform.localRotation = Quaternion.identity;
 
-            MaterialAlphaUtility.ApplyAlpha(_preview, 0.3f);
+            MaterialAlphaUtility.ApplyAlpha(_preview, 0.22f);
             foreach (var c in _preview.GetComponentsInChildren<Collider>())
                 c.enabled = false;
         }
 
         // 替换暗示：旧零件缩小 + 半透明
-        var occupant = socket.GetComponentInChildren<WorkshopPart>();
+        var occupant = WorkshopSocketUtility.GetDirectOccupant(socket);
         if (occupant != null && occupant != this)
         {
             _threattenedOccupant = occupant;
             _threattenedOriginalScale = occupant.transform.localScale;
+            _threattenedMaterialSnapshot = MaterialAlphaUtility.Capture(occupant.gameObject);
             occupant.transform.localScale = _threattenedOriginalScale * 0.85f;
-            MaterialAlphaUtility.ApplyAlpha(occupant.gameObject, 0.5f);
+            MaterialAlphaUtility.ApplyAlpha(occupant.gameObject, 0.18f);
         }
     }
 
@@ -624,8 +626,9 @@ public class WorkshopPart : MonoBehaviour
         if (_threattenedOccupant != null)
         {
             _threattenedOccupant.transform.localScale = _threattenedOriginalScale;
-            MaterialAlphaUtility.ApplyAlpha(_threattenedOccupant.gameObject, 1f);
+            MaterialAlphaUtility.Restore(_threattenedMaterialSnapshot);
             _threattenedOccupant = null;
+            _threattenedMaterialSnapshot = null;
         }
 
         _nearestSocket = null;

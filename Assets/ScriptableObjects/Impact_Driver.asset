@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 77e4650b0af9f4a06b67ded7c0f7d707, type: 3}
+  m_Name: 钻击
+  m_EditorClassIdentifier: Assembly-CSharp::PenPartData
+  PartID: impact_driver
+  DisplayName: "钻击"
+  Category: 2
+  Description: "笔尖正面命中时钻入爆冲。"
+  VisualPrefab: {fileID: 8347137561863255164, guid: 4b8cef7b73d964b59bb865f812ed8622, type: 3}
+  Icon: {fileID: 0}
+  PlugsInto: 4
+  Mass: 0.085
+  PhysicsMaterial: {fileID: 13400000, guid: 2ffce597b755a49b39a2192ad1452573, type: 2}
+  LaunchPowerMultiplier: 1
+  BuyPrice: 14
+  Effects:
+  - {fileID: 11400000, guid: 8988f8725cfb8483d9ebf2099cf6d8f0, type: 2}

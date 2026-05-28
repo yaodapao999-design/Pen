@@ -19,7 +19,10 @@ public static class AimTrajectoryPredictor
 {
     private const string PREDICTION_SCENE_NAME = "_AimTrajectoryPredictionScene";
     private const float SIMULATION_STEP = 0.02f;
-    private const float MAX_SIMULATION_SECONDS = 5.0f;
+    // Aim UI should predict the useful launch process, not simulate until full physical rest.
+    // Keeping this close to fallback horizon removes worst-case 250-step spikes while preserving
+    // the visible front arc players actually aim with.
+    private const float MAX_SIMULATION_SECONDS = 1.35f;
     private const float MIN_SIMULATION_SECONDS = 0.18f;
     private const float STOP_SPEED = 0.05f;
     private const float SUPPORT_RAY_UP = 1.0f;
@@ -27,9 +30,6 @@ public static class AimTrajectoryPredictor
     private const float FLOOR_THICKNESS = 0.12f;
     private const float FLOOR_SIZE = 80f;
 
-    private const float DEFAULT_DYNAMIC_FRICTION = 0.42f;
-    private const float MIN_FRICTION = 0.04f;
-    private const float MAX_FRICTION = 2.5f;
     private const float FRICTION_DECEL_SCALE = 1.85f;
     private const float SPIN_DRIFT_METERS_PER_RAD = 0.055f;
     private const float ANGULAR_DECEL_SCALE = 5.5f;
@@ -87,8 +87,8 @@ public static class AimTrajectoryPredictor
             return false;
         fwd.Normalize();
 
-        float launchSpeed = Mathf.Max(0f, pen.EstimateLaunchVelocity(force));
-        if (launchSpeed <= MIN_PREDICTION_SPEED)
+        PenLaunchPhysicsSnapshot launch = PenLaunchPhysics.Build(pen, fwd, force, contactWorld);
+        if (!launch.IsValid || launch.LaunchVelocity <= MIN_PREDICTION_SPEED)
         {
             output.Add(contactWorld);
             return true;
@@ -114,9 +114,8 @@ public static class AimTrajectoryPredictor
                 return false;
 
             Vector3 trackedPointLocal = sourceRb.transform.InverseTransformPoint(contactWorld);
-            Vector3 effectiveContact = pen.GetEffectiveLaunchContactPoint(contactWorld);
-            Vector3 impulse = fwd * (launchSpeed * Mathf.Max(ghostRb.mass, 1e-4f));
-            ghostRb.AddForceAtPosition(impulse, effectiveContact, ForceMode.Impulse);
+            Vector3 impulse = launch.Direction * (launch.LaunchVelocity * Mathf.Max(ghostRb.mass, 1e-4f));
+            ghostRb.AddForceAtPosition(impulse, launch.EffectiveContactPointWorld, ForceMode.Impulse);
 
             output.Add(GetTrackedPointWorld(ghostRb, trackedPointLocal, contactWorld.y));
 
@@ -355,22 +354,19 @@ public static class AimTrajectoryPredictor
         }
         fwd.Normalize();
 
-        float initialSpeed = Mathf.Max(0f, pen.EstimateLaunchVelocity(force));
-        Vector3 comWorld = rb.worldCenterOfMass;
+        PenLaunchPhysicsSnapshot launch = PenLaunchPhysics.Build(pen, fwd, force, contactWorld);
+        float initialSpeed = launch.LaunchVelocity;
+        Vector3 comWorld = launch.CenterOfMassWorld;
         output.Add(contactWorld);
 
-        if (initialSpeed <= MIN_PREDICTION_SPEED)
+        if (!launch.IsValid || initialSpeed <= MIN_PREDICTION_SPEED)
             return;
 
-        float mass = Mathf.Max(rb.mass, 1e-4f);
-        Vector3 impulse = fwd * (initialSpeed * mass);
-        Vector3 effectiveContact = pen.GetEffectiveLaunchContactPoint(contactWorld);
-        Vector3 r = effectiveContact - comWorld;
-        float angularImpulseY = Vector3.Dot(Vector3.Cross(r, impulse), Vector3.up);
-        float inertiaY = EstimateInertiaAroundWorldAxis(rb, Vector3.up);
+        float angularImpulseY = launch.AngularImpulseY;
+        float inertiaY = PenLaunchPhysics.EstimateInertiaAroundWorldAxis(rb, Vector3.up);
         float angularVelocityY = Mathf.Clamp(angularImpulseY / inertiaY, -MAX_ANGULAR_SPEED, MAX_ANGULAR_SPEED);
 
-        float friction = EstimateDynamicFriction(pen, contactWorld);
+        float friction = launch.DynamicFriction;
         float gravity = Mathf.Max(0.1f, Mathf.Abs(Physics.gravity.y));
         float linearDecel = Mathf.Max(0.05f, gravity * friction * FRICTION_DECEL_SCALE);
         float angularDecel = Mathf.Max(0.05f, gravity * friction * ANGULAR_DECEL_SCALE);
@@ -465,59 +461,4 @@ public static class AimTrajectoryPredictor
         }
     }
 
-    private static float EstimateInertiaAroundWorldAxis(Rigidbody rb, Vector3 worldAxis)
-    {
-        Vector3 axis = worldAxis.sqrMagnitude > 1e-6f ? worldAxis.normalized : Vector3.up;
-        Quaternion principalRotation = rb.rotation * rb.inertiaTensorRotation;
-        Vector3 localAxis = Quaternion.Inverse(principalRotation) * axis;
-        Vector3 inertia = rb.inertiaTensor;
-
-        float value =
-            inertia.x * localAxis.x * localAxis.x +
-            inertia.y * localAxis.y * localAxis.y +
-            inertia.z * localAxis.z * localAxis.z;
-
-        return Mathf.Max(value, 1e-4f);
-    }
-
-    private static float EstimateDynamicFriction(PenEntity pen, Vector3 contactWorld)
-    {
-        Collider[] colliders = pen.GetComponentsInChildren<Collider>();
-        if (colliders == null || colliders.Length == 0)
-            return DEFAULT_DYNAMIC_FRICTION;
-
-        float weightedFriction = 0f;
-        float totalWeight = 0f;
-
-        foreach (Collider col in colliders)
-        {
-            if (col == null || col.isTrigger) continue;
-
-            float friction = GetColliderDynamicFriction(col);
-            Bounds b = col.bounds;
-            Vector3 size = b.size;
-            float volumeWeight = Mathf.Max(0.001f, Mathf.Sqrt(Mathf.Max(size.x * size.y * size.z, 0.0001f)));
-            float contactDistance = Vector3.Distance(col.ClosestPoint(contactWorld), contactWorld);
-            float localWeight = 1f / Mathf.Max(0.12f, contactDistance + 0.12f);
-            float weight = volumeWeight * localWeight;
-
-            weightedFriction += friction * weight;
-            totalWeight += weight;
-        }
-
-        if (totalWeight <= 1e-5f)
-            return DEFAULT_DYNAMIC_FRICTION;
-
-        return Mathf.Clamp(weightedFriction / totalWeight, MIN_FRICTION, MAX_FRICTION);
-    }
-
-    private static float GetColliderDynamicFriction(Collider col)
-    {
-        PhysicsMaterial mat = col.sharedMaterial;
-
-        if (mat == null)
-            return DEFAULT_DYNAMIC_FRICTION;
-
-        return Mathf.Clamp(mat.dynamicFriction, MIN_FRICTION, MAX_FRICTION);
-    }
 }

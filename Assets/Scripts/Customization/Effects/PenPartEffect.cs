@@ -14,6 +14,11 @@ using UnityEngine;
 /// </summary>
 public abstract class PenPartEffect : ScriptableObject
 {
+    [Header("--- 展示 ---")]
+    public string DisplayName;
+    [TextArea(2, 5)]
+    public string Description;
+
     /// <summary>装配到笔上时调用（初始化效果）</summary>
     public virtual void OnAssembled(PenEffectContext context) { }
 

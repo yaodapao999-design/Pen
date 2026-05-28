@@ -15,8 +15,8 @@ using UnityEngine;
 ///   - 末端：明确箭头头，远镜头下也能读到发射方向
 ///   - 颜色：常态浅蓝白，满拉升温到金琥珀，避免旧版厚重红色攻击 UI</para>
 ///
-    /// <para><b>密度策略</b>：按固定世界间距采样。预测器仍算真实轨迹，但显示层只取可读前段；
-    /// 强力/高旋转时提前截断，避免后半段绕圈打结。</para>
+/// <para><b>密度策略</b>：按固定世界间距采样。预测器仍算真实轨迹，但显示层只取可读前段；
+/// 强力/高旋转时提前截断，避免后半段绕圈打结。</para>
 ///
 /// <para><b>深度分层</b>（防 Z-fighting 闪烁）：预测线是瞄准 overlay，整体抬高到笔面上方；
 /// 描边层在基础 Y，填充层抬 <see cref="FILL_Y_LIFT"/>，每片鳞片按序号再微抬
@@ -100,6 +100,40 @@ public class PenLaunchArrowView : MonoBehaviour
     [Tooltip("每一小段最多允许改变的角度。数值越低越像连续曲线，避免单个点出现 90 度折角。")]
     [Range(4f, 35f)] public float maxDisplayedTurnPerSegmentDegrees = 12f;
 
+    [Header("Temporal Lerp")]
+    [Tooltip("用线性插值平滑每帧预测线形状变化。只影响显示层，仍保留 low poly 分段箭羽。")]
+    public bool lerpTrajectoryChanges = true;
+    [Tooltip("预测线形状跟随新预测的速度。越大越跟手，越小越稳。")]
+    public float trajectoryLerpSpeed = 18f;
+    [Tooltip("按压点跳变超过该距离时直接重置插值，避免换点拖拽留下旧线残影。")]
+    public float trajectoryLerpResetDistance = 0.28f;
+    [Tooltip("起始方向突变超过该角度时直接重置插值，避免跨过笔身后旧弧线拖尾。")]
+    [Range(35f, 120f)] public float trajectoryLerpResetAngle = 75f;
+    [Tooltip("显示层先按固定弧长重采样，再做插值，避免物理预测点分布变化导致箭头游动。")]
+    public bool resampleTrajectoryForStability = true;
+    [Tooltip("显示层固定采样数量。数值越高曲线越稳定，过高会增加一点 mesh 计算。")]
+    [Range(12, 64)] public int stableTrajectorySampleCount = 32;
+
+    [Header("Full Pull Stability")]
+    [Tooltip("力度超过该比例时进入满拉稳定模式，压住箭头末端和长度的小抖动。")]
+    [Range(0.85f, 1f)] public float fullPullStabilityThreshold = 0.96f;
+    [Tooltip("满拉时预测轨迹形状跟随速度。低于普通速度，减少拉满后的细碎跳动。")]
+    public float fullPullTrajectoryLerpSpeed = 4f;
+    [Tooltip("满拉时预测点变化小于该距离就保持上一帧形状，只平移到当前拖拽点。")]
+    public float fullPullShapeDeadbandDistance = 0.10f;
+    [Tooltip("满拉时起始方向变化小于该角度就保持上一帧形状。")]
+    [Range(0f, 12f)] public float fullPullDirectionDeadbandDegrees = 6f;
+    [Tooltip("满拉时轨迹总长变化小于该值就保持上一帧形状，避免箭羽数量来回跳。")]
+    public float fullPullArcLengthDeadband = 0.16f;
+    [Tooltip("满拉时可视弧长变化小于该值就保持不动，避免尾部箭羽反复出现/消失。")]
+    public float fullPullArcDeadband = 0.16f;
+    [Tooltip("满拉时可视弧长跟随速度。")]
+    public float fullPullArcFollowSpeed = 4f;
+    [Tooltip("满拉时箭头头部方向的跟随速度。")]
+    public float fullPullHeadTangentFollowSpeed = 6f;
+    [Tooltip("满拉时箭头头部方向变化小于该角度就完全不动，避免箭尖细抖。")]
+    [Range(0f, 12f)] public float fullPullHeadTangentDeadbandDegrees = 5f;
+
     [Header("3-Tier Flat Shading")]
     [Tooltip("上纹（Highlight）亮度乘子。和低多边形+像素相机语言一致：硬色断，无插值。")]
     [Range(0f, 1f)] public float highlightValue = 1.00f;
@@ -141,11 +175,12 @@ public class PenLaunchArrowView : MonoBehaviour
     private readonly List<int> _fillTris = new List<int>(256);
     /// <summary>缓存折线累计弧长（每帧 rebuild 时刷新），用于按弧长采样位置和切向。</summary>
     private readonly List<float> _arcLengths = new List<float>(32);
-    private readonly List<Vector3> _readableTrajectory = new List<Vector3>(32);
-    private readonly List<Vector3> _trajectorySmoothingScratch = new List<Vector3>(64);
+    private readonly AimTrajectoryDisplayFilter _trajectoryFilter = new AimTrajectoryDisplayFilter();
     private bool _hasSmoothedDisplayArc;
     private float _smoothedDisplayArc;
     private Vector3 _lastAimDir;
+    private bool _hasSmoothedHeadTangent;
+    private Vector3 _smoothedHeadTangent;
 
     // ─── 生命周期 ──────────────────────────────────────────────────────────
 
@@ -223,6 +258,8 @@ public class PenLaunchArrowView : MonoBehaviour
         _meshRenderer.enabled = true;
         _currentFill = fillColor;
         _hasSmoothedDisplayArc = false;
+        _hasSmoothedHeadTangent = false;
+        ResetTemporalTrajectory();
         if (_mesh != null) { _mesh.Clear(); _mesh.subMeshCount = 2; }
         ApplyFillColor();
     }
@@ -233,6 +270,7 @@ public class PenLaunchArrowView : MonoBehaviour
         if (!s.IsArmed)
         {
             ClearMesh();
+            ResetTemporalTrajectory();
             return;
         }
 
@@ -252,12 +290,19 @@ public class PenLaunchArrowView : MonoBehaviour
     {
         if (_meshRenderer != null) _meshRenderer.enabled = false;
         _hasSmoothedDisplayArc = false;
+        _hasSmoothedHeadTangent = false;
+        ResetTemporalTrajectory();
         ClearMesh();
     }
 
     private void ClearMesh()
     {
         if (_mesh != null) { _mesh.Clear(); _mesh.subMeshCount = 2; }
+    }
+
+    private void ResetTemporalTrajectory()
+    {
+        _trajectoryFilter.Reset();
     }
 
     // ─── 核心构造 ──────────────────────────────────────────────────────────
@@ -300,11 +345,12 @@ public class PenLaunchArrowView : MonoBehaviour
             return;
         }
 
-        IReadOnlyList<Vector3> traj = BuildReadableTrajectory(rawTrajectory);
+        IReadOnlyList<Vector3> traj = BuildReadableTrajectory(rawTrajectory, s.Force);
         float totalArc = ComputeArcLengths(traj);
         float displayArc = SmoothDisplayArc(
             ComputeReadableArcLimit(traj, totalArc, s.Force, s.PredictionCurve01),
-            s.LaunchDirection);
+            s.LaunchDirection,
+            s.Force);
         if (displayArc <= startOffset)
         {
             ClearMesh();
@@ -367,6 +413,11 @@ public class PenLaunchArrowView : MonoBehaviour
         // Head：apex 在轨迹末端，base 沿切向回退 actualHeadLen
         Vector3 headApexPos = SamplePolyline(traj, headApexArc, out Vector3 headTangent) + offset;
         Vector3 headBasePos = SamplePolyline(traj, headBaseArc, out _) + offset;
+        Vector3 averagedHeadTangent = headApexPos - headBasePos;
+        averagedHeadTangent.y = 0f;
+        headTangent = SmoothHeadTangent(
+            averagedHeadTangent.sqrMagnitude > 1e-6f ? averagedHeadTangent : headTangent,
+            s.Force);
         Vector3 headSide = Vector3.Cross(headTangent, Vector3.up).normalized;
         float headWidth = headHalfWidth *
                           Mathf.Lerp(0.94f, 1.08f, Mathf.Clamp01(s.Force)) *
@@ -403,140 +454,36 @@ public class PenLaunchArrowView : MonoBehaviour
         return total;
     }
 
-    private IReadOnlyList<Vector3> BuildReadableTrajectory(IReadOnlyList<Vector3> raw)
+    private IReadOnlyList<Vector3> BuildReadableTrajectory(IReadOnlyList<Vector3> raw, float force)
     {
-        _readableTrajectory.Clear();
-        if (raw != null)
-        {
-            for (int i = 0; i < raw.Count; i++)
-                _readableTrajectory.Add(raw[i]);
-        }
-
-        if (_readableTrajectory.Count < 3)
-            return _readableTrajectory;
-
-        if (smoothTrajectoryForDisplay &&
-            trajectorySmoothingPasses > 0 &&
-            trajectoryCornerCut > 0.001f)
-        {
-            int passes = Mathf.Clamp(trajectorySmoothingPasses, 0, 3);
-            float cut = Mathf.Clamp(trajectoryCornerCut, 0.02f, 0.32f);
-            for (int pass = 0; pass < passes; pass++)
-                SmoothTrajectoryOnce(_readableTrajectory, _trajectorySmoothingScratch, cut);
-        }
-
-        if (limitDisplayedBend && maxDisplayedBendDegrees > 0.001f)
-        {
-            LimitDisplayedBend(
-                _readableTrajectory,
-                _trajectorySmoothingScratch,
-                maxDisplayedBendDegrees,
-                maxDisplayedTurnPerSegmentDegrees);
-        }
-
-        return _readableTrajectory;
+        return _trajectoryFilter.Build(raw, force, Time.deltaTime, BuildTrajectoryFilterSettings());
     }
 
-    private static void SmoothTrajectoryOnce(List<Vector3> points, List<Vector3> scratch, float cut)
+    private AimTrajectoryDisplayFilter.Settings BuildTrajectoryFilterSettings()
     {
-        if (points == null || scratch == null || points.Count < 3)
-            return;
-
-        scratch.Clear();
-        scratch.Add(points[0]);
-
-        for (int i = 0; i < points.Count - 1; i++)
+        return new AimTrajectoryDisplayFilter.Settings
         {
-            Vector3 a = points[i];
-            Vector3 b = points[i + 1];
-            scratch.Add(Vector3.Lerp(a, b, cut));
-            scratch.Add(Vector3.Lerp(a, b, 1f - cut));
-        }
+            Smooth = smoothTrajectoryForDisplay,
+            SmoothingPasses = trajectorySmoothingPasses,
+            CornerCut = trajectoryCornerCut,
 
-        scratch.Add(points[points.Count - 1]);
+            LimitBend = limitDisplayedBend,
+            MaxTotalBendDegrees = maxDisplayedBendDegrees,
+            MaxTurnPerSegmentDegrees = maxDisplayedTurnPerSegmentDegrees,
 
-        points.Clear();
-        for (int i = 0; i < scratch.Count; i++)
-            points.Add(scratch[i]);
-    }
+            TemporalLerp = lerpTrajectoryChanges,
+            ResampleForStability = resampleTrajectoryForStability,
+            StableSampleCount = stableTrajectorySampleCount,
+            TrajectoryLerpSpeed = trajectoryLerpSpeed,
+            TrajectoryLerpResetDistance = trajectoryLerpResetDistance,
+            TrajectoryLerpResetAngle = trajectoryLerpResetAngle,
 
-    private static void LimitDisplayedBend(
-        List<Vector3> points,
-        List<Vector3> rawCopy,
-        float maxDegrees,
-        float maxStepDegrees)
-    {
-        if (points == null || rawCopy == null || points.Count < 3)
-            return;
-
-        rawCopy.Clear();
-        for (int i = 0; i < points.Count; i++)
-            rawCopy.Add(points[i]);
-
-        if (!TryFindInitialFlatDirection(rawCopy, out Vector3 initialDir))
-            return;
-
-        float maxTurn = Mathf.Clamp(Mathf.Abs(maxDegrees), 1f, 360f);
-        float maxStepTurn = Mathf.Clamp(Mathf.Abs(maxStepDegrees), 1f, 89f);
-        Vector3 prevRawDir = initialDir;
-        float desiredTurn = 0f;
-        float displayTurn = 0f;
-        float usedBend = 0f;
-
-        points[0] = rawCopy[0];
-        for (int i = 1; i < rawCopy.Count; i++)
-        {
-            Vector3 rawSegment = rawCopy[i] - rawCopy[i - 1];
-            Vector3 flatSegment = rawSegment;
-            flatSegment.y = 0f;
-            float segmentLength = flatSegment.magnitude;
-            if (segmentLength <= 1e-5f)
-            {
-                Vector3 held = points[i - 1];
-                held.y = rawCopy[i].y;
-                points[i] = held;
-                continue;
-            }
-
-            Vector3 rawDir = flatSegment / segmentLength;
-            float rawTurn = Vector3.SignedAngle(prevRawDir, rawDir, Vector3.up);
-            desiredTurn += rawTurn;
-
-            float turnTowardRaw = desiredTurn - displayTurn;
-            float remainingBend = maxTurn - usedBend;
-            if (Mathf.Abs(turnTowardRaw) > 0.001f && remainingBend > 0.001f)
-            {
-                float stepTurn = Mathf.Clamp(turnTowardRaw, -maxStepTurn, maxStepTurn);
-                if (Mathf.Abs(stepTurn) > remainingBend)
-                    stepTurn = Mathf.Sign(stepTurn) * remainingBend;
-
-                displayTurn += stepTurn;
-                usedBend += Mathf.Abs(stepTurn);
-            }
-
-            Vector3 displayDir = Quaternion.AngleAxis(displayTurn, Vector3.up) * initialDir;
-            Vector3 next = points[i - 1] + displayDir.normalized * segmentLength;
-            next.y = rawCopy[i].y;
-            points[i] = next;
-            prevRawDir = rawDir;
-        }
-    }
-
-    private static bool TryFindInitialFlatDirection(IReadOnlyList<Vector3> points, out Vector3 direction)
-    {
-        for (int i = 1; i < points.Count; i++)
-        {
-            direction = points[i] - points[i - 1];
-            direction.y = 0f;
-            if (direction.sqrMagnitude > 1e-6f)
-            {
-                direction.Normalize();
-                return true;
-            }
-        }
-
-        direction = Vector3.zero;
-        return false;
+            FullPullStabilityThreshold = fullPullStabilityThreshold,
+            FullPullTrajectoryLerpSpeed = fullPullTrajectoryLerpSpeed,
+            FullPullShapeDeadbandDistance = fullPullShapeDeadbandDistance,
+            FullPullDirectionDeadbandDegrees = fullPullDirectionDeadbandDegrees,
+            FullPullArcLengthDeadband = fullPullArcLengthDeadband
+        };
     }
 
     /// <summary>
@@ -567,16 +514,18 @@ public class PenLaunchArrowView : MonoBehaviour
         return Mathf.Clamp(Mathf.Min(cappedArc, turnLimitedArc), Mathf.Min(readableMin, totalArc), totalArc);
     }
 
-    private float SmoothDisplayArc(float targetArc, Vector3 aimDirection)
+    private float SmoothDisplayArc(float targetArc, Vector3 aimDirection, float force)
     {
         Vector3 flatDir = aimDirection;
         flatDir.y = 0f;
         if (flatDir.sqrMagnitude > 1e-6f)
             flatDir.Normalize();
 
+        bool fullPull = IsFullPull(force);
+        float aimResetDot = fullPull ? 0.82f : 0.94f;
         bool aimChanged = _lastAimDir.sqrMagnitude > 1e-6f &&
                           flatDir.sqrMagnitude > 1e-6f &&
-                          Vector3.Dot(_lastAimDir, flatDir) < 0.94f;
+                          Vector3.Dot(_lastAimDir, flatDir) < aimResetDot;
 
         if (!_hasSmoothedDisplayArc || aimChanged || Time.deltaTime <= 0f)
         {
@@ -586,10 +535,53 @@ public class PenLaunchArrowView : MonoBehaviour
             return targetArc;
         }
 
-        float follow = 1f - Mathf.Exp(-Mathf.Max(1f, displayArcFollowSpeed) * Time.deltaTime);
+        if (fullPull && Mathf.Abs(targetArc - _smoothedDisplayArc) <= Mathf.Max(0.001f, fullPullArcDeadband))
+        {
+            _lastAimDir = flatDir;
+            return _smoothedDisplayArc;
+        }
+
+        float speed = fullPull
+            ? Mathf.Max(1f, fullPullArcFollowSpeed)
+            : Mathf.Max(1f, displayArcFollowSpeed);
+        float follow = 1f - Mathf.Exp(-speed * Time.deltaTime);
         _smoothedDisplayArc = Mathf.Lerp(_smoothedDisplayArc, targetArc, follow);
         _lastAimDir = flatDir;
         return _smoothedDisplayArc;
+    }
+
+    private Vector3 SmoothHeadTangent(Vector3 targetTangent, float force)
+    {
+        targetTangent.y = 0f;
+        if (targetTangent.sqrMagnitude <= 1e-6f)
+            return _hasSmoothedHeadTangent ? _smoothedHeadTangent : Vector3.forward;
+        targetTangent.Normalize();
+
+        if (!IsFullPull(force) || !_hasSmoothedHeadTangent || Time.deltaTime <= 0f)
+        {
+            _smoothedHeadTangent = targetTangent;
+            _hasSmoothedHeadTangent = true;
+            return targetTangent;
+        }
+
+        if (Vector3.Dot(_smoothedHeadTangent, targetTangent) < 0.35f)
+        {
+            _smoothedHeadTangent = targetTangent;
+            return targetTangent;
+        }
+
+        float angle = Vector3.Angle(_smoothedHeadTangent, targetTangent);
+        if (angle <= Mathf.Max(0f, fullPullHeadTangentDeadbandDegrees))
+            return _smoothedHeadTangent;
+
+        float follow = 1f - Mathf.Exp(-Mathf.Max(1f, fullPullHeadTangentFollowSpeed) * Time.deltaTime);
+        _smoothedHeadTangent = Vector3.Slerp(_smoothedHeadTangent, targetTangent, follow).normalized;
+        return _smoothedHeadTangent;
+    }
+
+    private bool IsFullPull(float force)
+    {
+        return force >= Mathf.Clamp01(fullPullStabilityThreshold);
     }
 
     private float ComputeStableSegmentAlpha(float distanceFromStart, float force, float friction01, float tailReveal)
@@ -940,6 +932,28 @@ public class PenLaunchArrowView : MonoBehaviour
             maxDisplayedBendDegrees = 180f;
         if (maxDisplayedTurnPerSegmentDegrees <= 0.001f)
             maxDisplayedTurnPerSegmentDegrees = 12f;
+        if (trajectoryLerpSpeed <= 0.001f)
+            trajectoryLerpSpeed = 18f;
+        if (trajectoryLerpResetDistance <= 0.001f)
+            trajectoryLerpResetDistance = 0.28f;
+        if (stableTrajectorySampleCount < 12)
+            stableTrajectorySampleCount = 32;
+        if (fullPullTrajectoryLerpSpeed <= 0.001f)
+            fullPullTrajectoryLerpSpeed = 4f;
+        if (fullPullShapeDeadbandDistance <= 0.001f)
+            fullPullShapeDeadbandDistance = 0.10f;
+        if (fullPullDirectionDeadbandDegrees <= 0.001f)
+            fullPullDirectionDeadbandDegrees = 6f;
+        if (fullPullArcLengthDeadband <= 0.001f)
+            fullPullArcLengthDeadband = 0.16f;
+        if (fullPullArcDeadband <= 0.001f)
+            fullPullArcDeadband = 0.16f;
+        if (fullPullArcFollowSpeed <= 0.001f)
+            fullPullArcFollowSpeed = 4f;
+        if (fullPullHeadTangentFollowSpeed <= 0.001f)
+            fullPullHeadTangentFollowSpeed = 6f;
+        if (fullPullHeadTangentDeadbandDegrees <= 0.001f)
+            fullPullHeadTangentDeadbandDegrees = 5f;
         if (LooksLikeThinAlphaCurve(alphaByForce))
             alphaByForce = AnimationCurve.EaseInOut(0f, 0.56f, 1f, 0.92f);
     }

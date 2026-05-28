@@ -18,5 +18,9 @@ MonoBehaviour:
   - {fileID: 11400000, guid: ba02923bd10124daea4f7bc3d2371027, type: 2}
   - {fileID: 11400000, guid: 5e20f679db33a4fe79b2c0edba8114ee, type: 2}
   - {fileID: 11400000, guid: 73162441abb1e4e4e95b567f56bdc341, type: 2}
-  _initialInventory: []
+  _initialInventory:
+  - {fileID: 11400000, guid: 9b75cec6c41fe4a38a946d00e7cd8a43, type: 2}
+  - {fileID: 11400000, guid: 0d5fa543b312b42d691c37c8a7cfeedb, type: 2}
+  - {fileID: 11400000, guid: ac7ee55f0a445474d9108d21ad27200b, type: 2}
+  - {fileID: 11400000, guid: ce5568083f9e34439a00bbbddef1f426, type: 2}
   _initialCoins: 15

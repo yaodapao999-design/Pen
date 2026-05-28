@@ -16,6 +16,7 @@ public class ActionState : IEntityState
     private float elapsedTime;
     private float _playerLowVelTimer;
     private float _enemyLowVelTimer;
+    private bool _roundStarted;
 
     public ActionState(BattleStateMachine stateMachine, BattleContext ctx)
     {
@@ -28,7 +29,10 @@ public class ActionState : IEntityState
         elapsedTime = 0f;
         _playerLowVelTimer = 0f;
         _enemyLowVelTimer = 0f;
+        _roundStarted = true;
+        NotifyRoundStart();
         ctx.pen.Launch(ctx.LaunchDirection, ctx.LaunchForce, ctx.ContactPointWorld);
+        ctx.pen.GetComponent<PenEffectRunner>()?.NotifyLaunch(ctx.LaunchDirection, ctx.LaunchForce);
     }
 
     public void Update()
@@ -77,5 +81,22 @@ public class ActionState : IEntityState
         return false;
     }
 
-    public void Exit() { }
+    public void Exit()
+    {
+        if (!_roundStarted) return;
+        _roundStarted = false;
+        NotifyRoundEnd();
+    }
+
+    private void NotifyRoundStart()
+    {
+        ctx.PlayerPen?.GetComponent<PenEffectRunner>()?.NotifyRoundStart();
+        ctx.EnemyPen?.GetComponent<PenEffectRunner>()?.NotifyRoundStart();
+    }
+
+    private void NotifyRoundEnd()
+    {
+        ctx.PlayerPen?.GetComponent<PenEffectRunner>()?.NotifyRoundEnd();
+        ctx.EnemyPen?.GetComponent<PenEffectRunner>()?.NotifyRoundEnd();
+    }
 }
